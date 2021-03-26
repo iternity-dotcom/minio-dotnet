@@ -3039,6 +3039,12 @@ namespace Minio.Functional.Tests
             {
                 new MintLogger("RemoveObjects_Test3", removeObjectSignature2, "Tests whether RemoveObjectsAsync for multi objects/versions delete passes", TestStatus.FAIL, (DateTime.Now - startTime), "", ex.Message, ex.ToString(), args).Log();
             }
+            catch (NotImplementedException niex)
+            {
+                new MintLogger("RemoveObjects_Test3", removeObjectSignature2,
+                    "Tests whether RemoveObjectsAsync for multi objects/versions delete passes", TestStatus.FAIL,
+                    (DateTime.Now - startTime), "", niex.Message, niex.ToString(), args).Log();
+            }
         }
 
         #region Presigned Get Object
@@ -4335,9 +4341,17 @@ namespace Minio.Functional.Tests
             }
             catch (Exception ex)
             {
-                new MintLogger(nameof(ObjectLockConfigurationAsync_Test1), setObjectLockConfigurationSignature, "Tests whether SetObjectLockConfigurationAsync passes", TestStatus.FAIL, (DateTime.Now - startTime), ex.Message, ex.ToString(), args:args).Log();
-                await TearDown(minio, bucketName);
-                return;
+                try
+                {
+                    new MintLogger(nameof(ObjectLockConfigurationAsync_Test1), setObjectLockConfigurationSignature, "Tests whether SetObjectLockConfigurationAsync passes", TestStatus.FAIL, (DateTime.Now - startTime), ex.Message, ex.ToString(), args:args).Log();
+                    await TearDown(minio, bucketName);
+                    return;
+                }
+                catch (BucketNotFoundException bnfe)
+                {
+                    new MintLogger(nameof(ObjectLockConfigurationAsync_Test1), setObjectLockConfigurationSignature, "Tests whether SetObjectLockConfigurationAsync passes", TestStatus.FAIL, (DateTime.Now - startTime), bnfe.Message, bnfe.ToString(), args:args).Log();
+                    return;   
+                }
             }
             try
             {
@@ -4353,9 +4367,17 @@ namespace Minio.Functional.Tests
             }
             catch (Exception ex)
             {
-                await TearDown(minio, bucketName);
-                new MintLogger(nameof(ObjectLockConfigurationAsync_Test1), getObjectLockConfigurationSignature, "Tests whether GetObjectLockConfigurationAsync passes", TestStatus.FAIL, (DateTime.Now - startTime), ex.Message, ex.ToString(), args:args).Log();
-                return;
+                try
+                {
+                    await TearDown(minio, bucketName);
+                    new MintLogger(nameof(ObjectLockConfigurationAsync_Test1), getObjectLockConfigurationSignature, "Tests whether GetObjectLockConfigurationAsync passes", TestStatus.FAIL, (DateTime.Now - startTime), ex.Message, ex.ToString(), args:args).Log();
+                    return;
+                }
+                catch (BucketNotFoundException bnfe)
+                {
+                    new MintLogger(nameof(ObjectLockConfigurationAsync_Test1), getObjectLockConfigurationSignature, "Tests whether GetObjectLockConfigurationAsync passes", TestStatus.FAIL, (DateTime.Now - startTime), bnfe.Message, bnfe.ToString(), args:args).Log();
+                    return;
+                }
             }
             try
             {
