@@ -2901,7 +2901,7 @@ namespace Minio.Functional.Tests
                         Assert.AreEqual(count, numObjects);
                     });
 
-                System.Threading.Thread.Sleep(5000);
+                System.Threading.Thread.Sleep(20000);
                 RemoveObjectsArgs rmArgs = new RemoveObjectsArgs()
                                                         .WithBucket(bucketName)
                                                         .WithObjects(objectNamesSet.ToList());
