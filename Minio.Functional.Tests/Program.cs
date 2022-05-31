@@ -28,6 +28,7 @@ namespace Minio.Functional.Tests
             string accessKey = null;
             string secretKey = null;
             string enableHttps = "0";
+            string skipSseTests = "0";
             string kmsEnabled = "0";
 
             bool useAWS = Environment.GetEnvironmentVariable("AWS_ENDPOINT") != null;
@@ -37,6 +38,7 @@ namespace Minio.Functional.Tests
                 accessKey = Environment.GetEnvironmentVariable("ACCESS_KEY");
                 secretKey = Environment.GetEnvironmentVariable("SECRET_KEY");
                 enableHttps = Environment.GetEnvironmentVariable("ENABLE_HTTPS");
+                skipSseTests = Environment.GetEnvironmentVariable("SKIP_SSE_TESTS");
                 kmsEnabled = Environment.GetEnvironmentVariable("ENABLE_KMS");
             }
             else
@@ -187,7 +189,7 @@ namespace Minio.Functional.Tests
                 FunctionalTest.BucketLifecycleAsync_Test1(minioClient).Wait();
 
                 // Test encryption
-                if (enableHttps == "1")
+                if (enableHttps == "1" && skipSseTests != "1")
                 {
                     ServicePointManager.ServerCertificateValidationCallback += (sender, certificate, chain, sslPolicyErrors) => true;
                     FunctionalTest.PutGetStatEncryptedObject_Test1(minioClient).Wait();
