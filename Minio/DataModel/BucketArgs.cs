@@ -16,42 +16,42 @@
 
 using System.Collections.Generic;
 
-namespace Minio
+namespace Minio;
+
+public abstract class BucketArgs<T> : Args
+    where T : BucketArgs<T>
 {
-    public abstract class BucketArgs<T> : Args 
-                where T : BucketArgs<T>
+    public BucketArgs()
     {
-        internal string BucketName { get; set; }
-        internal Dictionary<string, string> Headers { get; set; }
+        Headers = new Dictionary<string, string>();
+    }
 
-        public BucketArgs()
+    internal string BucketName { get; set; }
+
+    internal Dictionary<string, string> Headers { get; set; }
+
+    public T WithBucket(string bucket)
+    {
+        BucketName = bucket;
+        return (T)this;
+    }
+
+    public T WithHeaders(Dictionary<string, string> headers)
+    {
+        if (headers == null || headers.Count <= 0) return (T)this;
+        Headers = Headers ?? new Dictionary<string, string>();
+        foreach (var key in headers.Keys)
         {
-            this.Headers = new Dictionary<string, string>();
+            if (Headers.ContainsKey(key))
+                Headers.Remove(key);
+            Headers[key] = headers[key];
         }
 
-        public T WithBucket(string bucket)
-        {
-            this.BucketName = bucket;
-            return (T)this;
-        }
+        return (T)this;
+    }
 
-        public T WithHeaders(Dictionary<string, string> headers)
-        {
-            if (headers == null || headers.Count <= 0)
-            {
-                return (T)this;
-            }
-            this.Headers = this.Headers ?? new Dictionary<string, string>();
-            foreach (string key in headers.Keys)
-            {
-                this.Headers[key] = headers[key];
-            }
-            return (T)this;
-        }
-
-        internal virtual void Validate()
-        {
-            utils.ValidateBucketName(this.BucketName);
-        }
+    internal virtual void Validate()
+    {
+        utils.ValidateBucketName(BucketName);
     }
 }

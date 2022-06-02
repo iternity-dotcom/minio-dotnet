@@ -17,51 +17,51 @@
 
 using System;
 
-using RestSharp;
+namespace Minio.Exceptions;
 
-namespace Minio.Exceptions
+[Serializable]
+public class MinioException : Exception
 {
-    [Serializable]
-    public class MinioException : Exception
+    public MinioException(ResponseResult serverResponse)
+        : this(null, serverResponse)
     {
-        private static string GetMessage(string message, IRestResponse serverResponse)
-        {
-            if (serverResponse == null && string.IsNullOrEmpty(message))
-                throw new ArgumentNullException(nameof(message));
+    }
 
-            if (serverResponse == null)
-                return $"MinIO API responded with message={message}";
+    public MinioException(string message)
+        : this(message, null)
+    {
+    }
 
-            if (message == null)
-                return $"MinIO API responded with status code={serverResponse.StatusCode}, response={serverResponse.ErrorMessage}, content={serverResponse.Content}";
+    public MinioException(string message, ResponseResult serverResponse)
+        : base(GetMessage(message, serverResponse))
+    {
+        ServerMessage = message;
+        ServerResponse = serverResponse;
+    }
 
-            return $"MinIO API responded with message={message}. Status code={serverResponse.StatusCode}, response={serverResponse.ErrorMessage}, content={serverResponse.Content}";
-        }
+    public string ServerMessage { get; }
 
-        public MinioException(IRestResponse serverResponse)
-            : this(null, serverResponse)
-        {
-        }
+    public ResponseResult ServerResponse { get; }
 
-        public MinioException(string message)
-            : this(message, null)
-        {
-        }
+    public ErrorResponse Response { get; internal set; }
 
-        public MinioException(string message, IRestResponse serverResponse)
-            : base(GetMessage(message, serverResponse))
-        {
-            this.ServerMessage = message;
-            this.ServerResponse = serverResponse;
+    public string XmlError { get; internal set; }
 
-        }
+    private static string GetMessage(string message, ResponseResult serverResponse)
+    {
+        if (serverResponse == null && string.IsNullOrEmpty(message))
+            throw new ArgumentNullException(nameof(message));
 
-        public string ServerMessage { get; }
+        if (serverResponse == null)
+            return $"MinIO API responded with message={message}";
 
-        public IRestResponse ServerResponse { get; }
+        var contentString = serverResponse.Content;
 
-        public ErrorResponse Response { get; internal set; }
+        if (message == null)
+            return
+                $"MinIO API responded with status code={serverResponse.StatusCode}, response={serverResponse.ErrorMessage}, content={contentString}";
 
-        public string XmlError { get; internal set; }
+        return
+            $"MinIO API responded with message={message}. Status code={serverResponse.StatusCode}, response={serverResponse.ErrorMessage}, content={contentString}";
     }
 }

@@ -14,31 +14,29 @@
  * limitations under the License.
  */
 
+namespace Minio;
 
-namespace Minio
+public abstract class ObjectArgs<T> : BucketArgs<T>
+    where T : ObjectArgs<T>
 {
-    public abstract class ObjectArgs<T> : BucketArgs<T>
-                            where T : ObjectArgs<T>
+    internal string ObjectName { get; set; }
+    internal byte[] RequestBody { get; set; }
+
+    public T WithObject(string obj)
     {
-        internal string ObjectName { get; set; }
-        internal object RequestBody { get; set; }
+        ObjectName = obj;
+        return (T)this;
+    }
 
-        public T WithObject(string obj)
-        {
-            this.ObjectName = obj;
-            return (T)this;
-        }
+    public T WithRequestBody(byte[] data)
+    {
+        RequestBody = data;
+        return (T)this;
+    }
 
-        public T WithRequestBody(object data)
-        {
-            this.RequestBody = data;
-            return (T)this;
-        }
-
-        internal override void Validate()
-        {
-            base.Validate();
-            utils.ValidateObjectName(this.ObjectName);
-        }
+    internal override void Validate()
+    {
+        base.Validate();
+        utils.ValidateObjectName(ObjectName);
     }
 }

@@ -17,33 +17,37 @@
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 
-namespace Minio
+namespace Minio;
+
+public static class Regions
 {
-    public static class Regions
+    private static readonly Regex endpointRegex = new(@"s3[.\-](.*?)\.amazonaws\.com$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.RightToLeft);
+
+    private static readonly ConcurrentDictionary<string, string> cache = new();
+
+    /// <summary>
+    ///     Get corresponding region for input host.
+    /// </summary>
+    /// <param name="endpoint">S3 API endpoint</param>
+    /// <returns>Region corresponding to the endpoint. Default is 'us-east-1'</returns>
+    public static string GetRegionFromEndpoint(string endpoint)
     {
-        private static readonly Regex endpointRegex = new Regex(@"s3[.\-](.*?)\.amazonaws\.com$", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.RightToLeft);
-        private static readonly ConcurrentDictionary<string, string> cache = new ConcurrentDictionary<string, string>();
-
-        /// <summary>
-        /// Get corresponding region for input host.
-        /// </summary>
-        /// <param name="endpoint">S3 API endpoint</param>
-        /// <returns>Region corresponding to the endpoint. Default is 'us-east-1'</returns>
-        public static string GetRegionFromEndpoint(string endpoint)
-        {
+        if (!string.IsNullOrEmpty(endpoint))
             return cache.GetOrAdd(endpoint, GetRegionFromEndpointImpl);
-        }
+        return string.Empty;
+    }
 
-        private static string GetRegionFromEndpointImpl(string endpoint)
+    private static string GetRegionFromEndpointImpl(string endpoint)
+    {
+        if (!string.IsNullOrEmpty(endpoint))
         {
-            Match match = endpointRegex.Match(endpoint);
+            var match = endpointRegex.Match(endpoint);
 
             if (match.Success)
-            {
                 return match.Groups[1].Value;
-            }
-
-            return string.Empty;
         }
+
+        return string.Empty;
     }
 }

@@ -25,27 +25,26 @@ using System.Xml.Serialization;
  * https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketReplication.html
  */
 
-namespace Minio.DataModel.Replication
-{
-    [Serializable]
-    [XmlRoot(ElementName = "ExistingObjectReplication")]
-    public class ExistingObjectReplication
-    {
-        [XmlElement("Status")]
-        public string Status { get; set; }
+namespace Minio.DataModel.Replication;
 
-        public ExistingObjectReplication()
-        {
-            this.Status = null;
-        }
-        
-        public ExistingObjectReplication(string status) 
-        {
-            if (string.IsNullOrEmpty(status) || string.IsNullOrWhiteSpace(status))
-            {
-                throw new ArgumentNullException(nameof(Status) + " cannot be null or empty.");
-            }
-            this.Status = status;
-        }
+[Serializable]
+[XmlRoot(ElementName = "ExistingObjectReplication")]
+public class ExistingObjectReplication
+{
+    public const string StatusEnabled = "Enabled";
+    public const string StatusDisabled = "Disabled";
+
+    public ExistingObjectReplication()
+    {
+        Status = null;
     }
+
+    public ExistingObjectReplication(string status)
+    {
+        if (string.IsNullOrEmpty(status) || string.IsNullOrWhiteSpace(status))
+            throw new ArgumentNullException(nameof(Status) + " cannot be null or empty.");
+        Status = status;
+    }
+
+    [XmlElement("Status")] public string Status { get; set; }
 }

@@ -15,14 +15,12 @@
  * limitations under the License.
  */
 
-using RestSharp;
 
-namespace Minio.Exceptions
+namespace Minio.Exceptions;
+
+public class InternalClientException : MinioException
 {
-    public class InternalClientException : MinioException
+    public InternalClientException(string message, ResponseResult response) : base(message, response)
     {
-        public InternalClientException(string message, IRestResponse response) : base(message, response)
-        {
-        }
     }
 }

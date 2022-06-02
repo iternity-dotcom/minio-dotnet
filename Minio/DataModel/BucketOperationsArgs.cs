@@ -17,715 +17,768 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Text;
 using Minio.DataModel;
 using Minio.DataModel.ILM;
+using Minio.DataModel.ObjectLock;
 using Minio.DataModel.Replication;
 using Minio.DataModel.Tags;
-using Minio.DataModel.ObjectLock;
 using Minio.Exceptions;
-using RestSharp;
 
-namespace Minio
+namespace Minio;
+
+public class BucketExistsArgs : BucketArgs<BucketExistsArgs>
 {
-    public class BucketExistsArgs: BucketArgs<BucketExistsArgs>
+    public BucketExistsArgs()
     {
-        public BucketExistsArgs()
-        {
-            this.RequestMethod = Method.HEAD;
-        }
+        RequestMethod = HttpMethod.Head;
+    }
+}
+
+public class RemoveBucketArgs : BucketArgs<RemoveBucketArgs>
+{
+    public RemoveBucketArgs()
+    {
+        RequestMethod = HttpMethod.Delete;
+    }
+}
+
+public class MakeBucketArgs : BucketArgs<MakeBucketArgs>
+{
+    public MakeBucketArgs()
+    {
+        RequestMethod = HttpMethod.Put;
     }
 
-    public class RemoveBucketArgs : BucketArgs<RemoveBucketArgs>
+    internal string Location { get; set; }
+    internal bool ObjectLock { get; set; }
+
+    public MakeBucketArgs WithLocation(string loc)
     {
-        public RemoveBucketArgs()
-        {
-            this.RequestMethod = Method.DELETE;
-        }
+        Location = loc;
+        return this;
     }
 
-    public class MakeBucketArgs : BucketArgs<MakeBucketArgs>
+    public MakeBucketArgs WithObjectLock()
     {
-        internal string Location { get; set; }
-        internal bool ObjectLock { get; set; }
-        public MakeBucketArgs()
-        {
-            this.RequestMethod = Method.PUT;
-        }
-
-        public MakeBucketArgs WithLocation(string loc)
-        {
-            this.Location = loc;
-            return this;
-        }
-
-        public MakeBucketArgs WithObjectLock()
-        {
-            this.ObjectLock = true;
-            return this;
-        }
-
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.XmlSerializer = new RestSharp.Serializers.DotNetXmlSerializer();
-            request.RequestFormat = DataFormat.Xml;
-            // ``us-east-1`` is not a valid location constraint according to amazon, so we skip it.
-            if (!string.IsNullOrEmpty(this.Location) && this.Location != "us-east-1")
-            {
-                CreateBucketConfiguration config = new CreateBucketConfiguration(this.Location);
-                string body = utils.MarshalXML(config, "http://s3.amazonaws.com/doc/2006-03-01/");
-                request.AddParameter("text/xml", body, ParameterType.RequestBody);
-            }
-            if (this.ObjectLock)
-            {
-                request.AddOrUpdateParameter("X-Amz-Bucket-Object-Lock-Enabled", "true", ParameterType.HttpHeader);
-            }
-            return request;
-        }
-    }
-    public class ListObjectsArgs : BucketArgs<ListObjectsArgs>
-    {
-        internal string Prefix { get; private set; }
-        internal bool Recursive { get; private set; }
-        internal bool Versions { get; private set; }
-        internal bool UseV2 { get; private set; }
-
-        public ListObjectsArgs()
-        {
-            this.UseV2 = true;
-            this.Versions = false;
-        }
-
-        public ListObjectsArgs WithPrefix(string prefix)
-        {
-            this.Prefix = prefix;
-            return this;
-        }
-        public ListObjectsArgs WithRecursive(bool rec)
-        {
-            this.Recursive = rec;
-            return this;
-        }
-        public ListObjectsArgs WithVersions(bool ver)
-        {
-            this.Versions = ver;
-            return this;
-        }
-
-        public ListObjectsArgs WithListObjectsV1(bool useV1)
-        {
-            this.UseV2 = !useV1;
-            return this;
-        }
+        ObjectLock = true;
+        return this;
     }
 
-    internal class GetObjectListArgs : BucketArgs<GetObjectListArgs>
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
     {
-        internal string Delimiter { get; private set; }
-        internal string Prefix { get; private set; }
-        internal bool UseV2 { get; private set; }
-        internal string Marker { get; private set; }
-        internal string VersionIdMarker { get; private set; }
-        internal bool Versions { get; private set; }
-        internal string ContinuationToken { get; set; }
-
-        public GetObjectListArgs()
+        // ``us-east-1`` is not a valid location constraint according to amazon, so we skip it.
+        if (!string.IsNullOrEmpty(Location) && Location != "us-east-1")
         {
-            this.RequestMethod = Method.GET;
-            // Avoiding null values. Default is empty strings.
-            this.Delimiter = string.Empty;
-            this.Prefix = string.Empty;
-            this.UseV2 = true;
-            this.Versions = false;
-            this.Marker = string.Empty;
+            var config = new CreateBucketConfiguration(Location);
+            var body = utils.MarshalXML(config, "http://s3.amazonaws.com/doc/2006-03-01/");
+            requestMessageBuilder.AddXmlBody(body);
+            requestMessageBuilder.AddOrUpdateHeaderParameter("Content-Md5",
+                utils.getMD5SumStr(Encoding.UTF8.GetBytes(body)));
         }
 
-        public GetObjectListArgs WithDelimiter(string delim)
-        {
-            this.Delimiter = delim ?? string.Empty;
-            return this;
-        }
+        if (ObjectLock) requestMessageBuilder.AddOrUpdateHeaderParameter("X-Amz-Bucket-Object-Lock-Enabled", "true");
+        return requestMessageBuilder;
+    }
+}
 
-        public GetObjectListArgs WithPrefix(string prefix)
-        {
-            this.Prefix = prefix ?? string.Empty;
-            return this;
-        }
-
-        public GetObjectListArgs WithMarker(string marker)
-        {
-            this.Marker = string.IsNullOrWhiteSpace(marker)? string.Empty : marker;
-            return this;
-        }
-
-        public GetObjectListArgs WithVersionIdMarker(string marker)
-        {
-            this.VersionIdMarker = string.IsNullOrWhiteSpace(marker)? string.Empty : marker;
-            return this;
-        }
-
-        public GetObjectListArgs WithVersions(bool versions)
-        {
-            this.Versions = versions;
-            return this;
-        }
-
-        public GetObjectListArgs WithContinuationToken(string token)
-        {
-            this.ContinuationToken = string.IsNullOrWhiteSpace(token)?string.Empty:token;
-            return this;
-        }
-
-        public GetObjectListArgs WithListObjectsV1(bool useV1)
-        {
-            this.UseV2 = !useV1;
-            return this;
-        }
-
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("delimiter",this.Delimiter);
-            request.AddQueryParameter("max-keys", "1000");
-            request.AddQueryParameter("encoding-type","url");
-            if (!string.IsNullOrWhiteSpace(this.Prefix))
-            {
-                request.AddQueryParameter("prefix",this.Prefix);
-            }
-            if (this.Versions)
-            {
-                request.AddQueryParameter("versions", "");
-                if (!string.IsNullOrWhiteSpace(this.Marker))
-                {
-                    request.AddQueryParameter("key-marker",this.Marker);
-                }
-                if (!string.IsNullOrWhiteSpace(this.VersionIdMarker))
-                {
-                    request.AddQueryParameter("version-id-marker",this.VersionIdMarker);
-                }
-            }
-            else if(!this.Versions && this.UseV2)
-            {
-                request.AddQueryParameter("list-type", "2");
-                if (!string.IsNullOrWhiteSpace(this.Marker))
-                {
-                    request.AddQueryParameter("start-after",this.Marker);
-                }
-                if (!string.IsNullOrWhiteSpace(this.ContinuationToken))
-                {
-                    request.AddQueryParameter("continuation-token",this.ContinuationToken);
-                }
-            }
-            else if (!this.Versions && !this.UseV2)
-            {
-                request.AddQueryParameter("marker",this.Marker);
-            }
-            else
-            {
-                throw new InvalidOperationException("Wrong set of properties set.");
-            }
-            return request;
-        }
+public class ListObjectsArgs : BucketArgs<ListObjectsArgs>
+{
+    public ListObjectsArgs()
+    {
+        UseV2 = true;
+        Versions = false;
     }
 
-    public class GetPolicyArgs : BucketArgs<GetPolicyArgs>
+    internal string Prefix { get; private set; }
+    internal bool Recursive { get; private set; }
+    internal bool Versions { get; private set; }
+    internal bool UseV2 { get; private set; }
+
+    public ListObjectsArgs WithPrefix(string prefix)
     {
-        public GetPolicyArgs()
-        {
-            this.RequestMethod = Method.GET;
-        }
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("policy","");
-            return request;
-        }
+        Prefix = prefix;
+        return this;
     }
 
-    public class SetPolicyArgs : BucketArgs<SetPolicyArgs>
+    public ListObjectsArgs WithRecursive(bool rec)
     {
-        internal string PolicyJsonString { get; private set; }
-        public SetPolicyArgs()
+        Recursive = rec;
+        return this;
+    }
+
+    public ListObjectsArgs WithVersions(bool ver)
+    {
+        Versions = ver;
+        return this;
+    }
+
+    public ListObjectsArgs WithListObjectsV1(bool useV1)
+    {
+        UseV2 = !useV1;
+        return this;
+    }
+}
+
+internal class GetObjectListArgs : BucketArgs<GetObjectListArgs>
+{
+    public GetObjectListArgs()
+    {
+        RequestMethod = HttpMethod.Get;
+        // Avoiding null values. Default is empty strings.
+        Delimiter = string.Empty;
+        Prefix = string.Empty;
+        UseV2 = true;
+        Versions = false;
+        Marker = string.Empty;
+    }
+
+    internal string Delimiter { get; private set; }
+    internal string Prefix { get; private set; }
+    internal bool UseV2 { get; private set; }
+    internal string Marker { get; private set; }
+    internal string VersionIdMarker { get; private set; }
+    internal bool Versions { get; private set; }
+    internal string ContinuationToken { get; set; }
+
+    public GetObjectListArgs WithDelimiter(string delim)
+    {
+        Delimiter = delim ?? string.Empty;
+        return this;
+    }
+
+    public GetObjectListArgs WithPrefix(string prefix)
+    {
+        Prefix = prefix ?? string.Empty;
+        return this;
+    }
+
+    public GetObjectListArgs WithMarker(string marker)
+    {
+        Marker = string.IsNullOrWhiteSpace(marker) ? string.Empty : marker;
+        return this;
+    }
+
+    public GetObjectListArgs WithVersionIdMarker(string marker)
+    {
+        VersionIdMarker = string.IsNullOrWhiteSpace(marker) ? string.Empty : marker;
+        return this;
+    }
+
+    public GetObjectListArgs WithVersions(bool versions)
+    {
+        Versions = versions;
+        return this;
+    }
+
+    public GetObjectListArgs WithContinuationToken(string token)
+    {
+        ContinuationToken = string.IsNullOrWhiteSpace(token) ? string.Empty : token;
+        return this;
+    }
+
+    public GetObjectListArgs WithListObjectsV1(bool useV1)
+    {
+        UseV2 = !useV1;
+        return this;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        // using System.Web; Not sure if we need to add query parameters like this vs. requestMessageBuilder.AddQueryParameter()
+        // var query = HttpUtility.ParseQueryString(string.Empty);
+        // query["foo"] = "bar<>&-baz";
+        // query["bar"] = "bazinga";
+        // string queryString = query.ToString();        {
+
+
+        requestMessageBuilder.AddQueryParameter("delimiter", Delimiter);
+        requestMessageBuilder.AddQueryParameter("max-keys", "1000");
+        requestMessageBuilder.AddQueryParameter("encoding-type", "url");
+        requestMessageBuilder.AddQueryParameter("prefix", Prefix);
+        if (Versions)
         {
-            this.RequestMethod = Method.PUT;
+            requestMessageBuilder.AddQueryParameter("versions", "");
+            if (!string.IsNullOrWhiteSpace(Marker)) requestMessageBuilder.AddQueryParameter("key-marker", Marker);
+            if (!string.IsNullOrWhiteSpace(VersionIdMarker))
+                requestMessageBuilder.AddQueryParameter("version-id-marker", VersionIdMarker);
         }
-        internal override RestRequest BuildRequest(RestRequest request)
+        else if (!Versions && UseV2)
         {
-            if (string.IsNullOrEmpty(this.PolicyJsonString))
+            requestMessageBuilder.AddQueryParameter("list-type", "2");
+            if (!string.IsNullOrWhiteSpace(Marker)) requestMessageBuilder.AddQueryParameter("start-after", Marker);
+            if (!string.IsNullOrWhiteSpace(ContinuationToken))
+                requestMessageBuilder.AddQueryParameter("continuation-token", ContinuationToken);
+        }
+        else if (!Versions && !UseV2)
+        {
+            requestMessageBuilder.AddQueryParameter("marker", Marker);
+        }
+        else
+        {
+            throw new InvalidOperationException("Wrong set of properties set.");
+        }
+
+        return requestMessageBuilder;
+    }
+}
+
+public class GetPolicyArgs : BucketArgs<GetPolicyArgs>
+{
+    public GetPolicyArgs()
+    {
+        RequestMethod = HttpMethod.Get;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("policy", "");
+        return requestMessageBuilder;
+    }
+}
+
+public class SetPolicyArgs : BucketArgs<SetPolicyArgs>
+{
+    public SetPolicyArgs()
+    {
+        RequestMethod = HttpMethod.Put;
+    }
+
+    internal string PolicyJsonString { get; private set; }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        if (string.IsNullOrEmpty(PolicyJsonString))
+            new MinioException("SetPolicyArgs needs the policy to be set to the right JSON contents.");
+
+        requestMessageBuilder.AddQueryParameter("policy", "");
+        requestMessageBuilder.AddJsonBody(PolicyJsonString);
+        return requestMessageBuilder;
+    }
+
+    public SetPolicyArgs WithPolicy(string policy)
+    {
+        PolicyJsonString = policy;
+        return this;
+    }
+}
+
+public class RemovePolicyArgs : BucketArgs<RemovePolicyArgs>
+{
+    public RemovePolicyArgs()
+    {
+        RequestMethod = HttpMethod.Delete;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("policy", "");
+        return requestMessageBuilder;
+    }
+}
+
+public class GetBucketNotificationsArgs : BucketArgs<GetBucketNotificationsArgs>
+{
+    public GetBucketNotificationsArgs()
+    {
+        RequestMethod = HttpMethod.Get;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("notification", "");
+        return requestMessageBuilder;
+    }
+}
+
+public class SetBucketNotificationsArgs : BucketArgs<SetBucketNotificationsArgs>
+{
+    public SetBucketNotificationsArgs()
+    {
+        RequestMethod = HttpMethod.Put;
+    }
+
+    internal BucketNotification BucketNotificationConfiguration { private set; get; }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        if (BucketNotificationConfiguration == null)
+            throw new UnexpectedMinioException(
+                "Cannot BuildRequest for SetBucketNotificationsArgs. BucketNotification configuration not assigned");
+        requestMessageBuilder.AddQueryParameter("notification", "");
+        var body = utils.MarshalXML(BucketNotificationConfiguration, "http://s3.amazonaws.com/doc/2006-03-01/");
+        // Convert string to a byte array
+        var bodyInBytes = Encoding.ASCII.GetBytes(body);
+        requestMessageBuilder.BodyParameters.Add("content-type", "text/xml");
+        requestMessageBuilder.SetBody(bodyInBytes);
+
+        return requestMessageBuilder;
+    }
+
+    public SetBucketNotificationsArgs WithBucketNotificationConfiguration(BucketNotification config)
+    {
+        BucketNotificationConfiguration = config;
+        return this;
+    }
+}
+
+public class RemoveAllBucketNotificationsArgs : BucketArgs<RemoveAllBucketNotificationsArgs>
+{
+    public RemoveAllBucketNotificationsArgs()
+    {
+        RequestMethod = HttpMethod.Put;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("notification", "");
+        var bucketNotificationConfiguration = new BucketNotification();
+        var body = utils.MarshalXML(bucketNotificationConfiguration, "http://s3.amazonaws.com/doc/2006-03-01/");
+        // Convert string to a byte array
+        var bodyInBytes = Encoding.ASCII.GetBytes(body);
+        requestMessageBuilder.BodyParameters.Add("content-type", "text/xml");
+        requestMessageBuilder.SetBody(bodyInBytes);
+
+        return requestMessageBuilder;
+    }
+}
+
+public class ListenBucketNotificationsArgs : BucketArgs<ListenBucketNotificationsArgs>
+{
+    internal readonly IEnumerable<ApiResponseErrorHandlingDelegate> NoErrorHandlers =
+        Enumerable.Empty<ApiResponseErrorHandlingDelegate>();
+
+    public ListenBucketNotificationsArgs()
+    {
+        RequestMethod = HttpMethod.Get;
+        EnableTrace = false;
+        Events = new List<EventType>();
+        Prefix = "";
+        Suffix = "";
+    }
+
+    internal string Prefix { get; private set; }
+    internal string Suffix { get; private set; }
+    internal List<EventType> Events { get; }
+    internal IObserver<MinioNotificationRaw> NotificationObserver { get; private set; }
+    public bool EnableTrace { get; private set; }
+
+    public override string ToString()
+    {
+        var str = string.Join("\n", string.Format("\nRequestMethod= {0}", RequestMethod),
+            string.Format("EnableTrace= {0}", EnableTrace));
+
+        var eventsAsStr = "";
+        foreach (var eventType in Events)
+        {
+            if (!string.IsNullOrEmpty(eventsAsStr))
+                eventsAsStr += ", ";
+            eventsAsStr += eventType.value;
+        }
+
+        return string.Join("\n", str, string.Format("Events= [{0}]", eventsAsStr), string.Format("Prefix= {0}", Prefix),
+            string.Format("Suffix= {0}\n", Suffix));
+    }
+
+    public ListenBucketNotificationsArgs WithNotificationObserver(IObserver<MinioNotificationRaw> obs)
+    {
+        NotificationObserver = obs;
+        return this;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+
+    {
+        foreach (var eventType in Events) requestMessageBuilder.AddQueryParameter("events", eventType.value);
+        requestMessageBuilder.AddQueryParameter("prefix", Prefix);
+        requestMessageBuilder.AddQueryParameter("suffix", Suffix);
+
+        requestMessageBuilder.ResponseWriter = async responseStream =>
+        {
+            using (responseStream)
             {
-                new MinioException("SetPolicyArgs needs the policy to be set to the right JSON contents.");
-            }
-            request.AddQueryParameter("policy","");
-            request.AddJsonBody(this.PolicyJsonString);
-            return request;
-        }
-        public SetPolicyArgs WithPolicy(string policy)
-        {
-            this.PolicyJsonString = policy;
-            return this;
-        }
-    }
-
-    public class RemovePolicyArgs : BucketArgs<RemovePolicyArgs>
-    {
-        public RemovePolicyArgs()
-        {
-            this.RequestMethod = Method.DELETE;
-        }
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("policy","");
-            return request;
-        }
-    }
-
-    public class GetBucketNotificationsArgs : BucketArgs<GetBucketNotificationsArgs>
-    {
-        public GetBucketNotificationsArgs()
-        {
-            this.RequestMethod = Method.GET;
-        }
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("notification","");
-            return request;
-        }
-    }
-    public class SetBucketNotificationsArgs : BucketArgs<SetBucketNotificationsArgs>
-    {
-        internal BucketNotification BucketNotificationConfiguration { private set; get; }
-        public SetBucketNotificationsArgs()
-        {
-            this.RequestMethod = Method.PUT;
-        }
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            if (this.BucketNotificationConfiguration == null)
-            {
-                throw new UnexpectedMinioException("Cannot BuildRequest for SetBucketNotificationsArgs. BucketNotification configuration not assigned");
-            }
-            request.AddQueryParameter("notification","");
-            string body = this.BucketNotificationConfiguration.ToXML();
-            request.AddParameter("text/xml", body, ParameterType.RequestBody);
-            return request;
-        }
-        public SetBucketNotificationsArgs WithBucketNotificationConfiguration(BucketNotification config)
-        {
-            this.BucketNotificationConfiguration = config;
-            return this;
-        }
-    }
-
-    public class RemoveAllBucketNotificationsArgs : BucketArgs<RemoveAllBucketNotificationsArgs>
-    {
-        public RemoveAllBucketNotificationsArgs()
-        {
-            this.RequestMethod = Method.PUT;
-        }
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("notification","");
-            BucketNotification bucketNotificationConfiguration = new BucketNotification();
-            string body = utils.MarshalXML(bucketNotificationConfiguration, "http://s3.amazonaws.com/doc/2006-03-01/");
-            request.AddParameter("text/xml", body, ParameterType.RequestBody);
-
-            return request;
-        }
-    }
-
-    public class ListenBucketNotificationsArgs : BucketArgs<ListenBucketNotificationsArgs>
-    {
-        internal string Prefix { get; private set; }
-        internal string Suffix { get; private set; }
-        internal List<EventType> Events { get; private set; }
-        internal IObserver<MinioNotificationRaw> NotificationObserver { get; private set; }
-        public bool EnableTrace { get; private set; }
-
-        public ListenBucketNotificationsArgs()
-        {
-            this.RequestMethod = Method.GET;
-            this.EnableTrace = false;
-            this.Events = new List<EventType>();
-            this.Prefix="";
-            this.Suffix="";
-        }
-
-        public ListenBucketNotificationsArgs WithNotificationObserver(IObserver<MinioNotificationRaw> obs)
-        {
-            this.NotificationObserver = obs;
-            return this;
-        }
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("prefix",this.Prefix);
-            request.AddQueryParameter("suffix",this.Suffix);
-            foreach (var eventType in this.Events)
-            {
-                request.AddQueryParameter("events",eventType.value);
-            }
-            request.ResponseWriter = responseStream =>
-            {
-                using (responseStream)
-                {
-                    var sr = new StreamReader(responseStream);
-                    while (true)
+                var sr = new StreamReader(responseStream);
+                while (!sr.EndOfStream)
+                    try
                     {
-                        string line = sr.ReadLine();
-                        if (this.EnableTrace)
+                        var line = await sr.ReadLineAsync();
+                        if (EnableTrace)
                         {
                             Console.WriteLine("== ListenBucketNotificationsAsync read line ==");
                             Console.WriteLine(line);
                             Console.WriteLine("==============================================");
                         }
-                        if (line == null)
-                        {
-                            break;
-                        }
-                        string trimmed = line.Trim();
-                        if (trimmed.Length > 2)
-                        {
-                            this.NotificationObserver.OnNext(new MinioNotificationRaw(trimmed));
-                        }
+
+                        var trimmed = line.Trim();
+                        if (trimmed.Length > 2) NotificationObserver.OnNext(new MinioNotificationRaw(trimmed));
                     }
-                }
-            };
-
-            return request;
-        }
-
-        internal ListenBucketNotificationsArgs WithEnableTrace(bool trace)
-        {
-            this.EnableTrace = trace;
-            return this;
-        }
-
-        public ListenBucketNotificationsArgs WithPrefix(string prefix)
-        {
-            this.Prefix = prefix;
-            return this;
-        }
-
-        public ListenBucketNotificationsArgs WithSuffix(string suffix)
-        {
-            this.Suffix = suffix;
-            return this;
-        }
-    
-        public ListenBucketNotificationsArgs WithEvents(List<EventType> events)
-        {
-            this.Events.AddRange(events);
-            return this;
-        }
-    }
-
-
-    public class SetBucketEncryptionArgs : BucketArgs<SetBucketEncryptionArgs>
-    {
-        internal ServerSideEncryptionConfiguration EncryptionConfig { get; set; }
-
-        public SetBucketEncryptionArgs()
-        {
-            this.RequestMethod = Method.PUT;
-        }
-
-        public SetBucketEncryptionArgs WithEncryptionConfig(ServerSideEncryptionConfiguration config)
-        {
-            this.EncryptionConfig = config;
-            return this;
-        }
-
-        public SetBucketEncryptionArgs WithAESConfig()
-        {
-            this.EncryptionConfig = ServerSideEncryptionConfiguration.GetSSEConfigurationWithS3Rule();
-            return this;
-        }
-
-        public SetBucketEncryptionArgs WithKMSConfig(string keyId = null)
-        {
-            this.EncryptionConfig = ServerSideEncryptionConfiguration.GetSSEConfigurationWithKMSRule(keyId);
-            return this;
-        }
-
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            if (this.EncryptionConfig == null)
-            {
-                this.EncryptionConfig = ServerSideEncryptionConfiguration.GetSSEConfigurationWithS3Rule();
+                    catch
+                    {
+                        break;
+                    }
             }
-            request.AddQueryParameter("encryption","");
-            string body = utils.MarshalXML(this.EncryptionConfig, "http://s3.amazonaws.com/doc/2006-03-01/");
-            request.AddParameter(new Parameter("text/xml", body, ParameterType.RequestBody));
-
-            return request;
-        }
+        };
+        return requestMessageBuilder;
     }
 
-    public class GetBucketEncryptionArgs : BucketArgs<GetBucketEncryptionArgs>
+    internal ListenBucketNotificationsArgs WithEnableTrace(bool trace)
     {
-        public GetBucketEncryptionArgs()
-        {
-            this.RequestMethod = Method.GET;
-        }
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("encryption","");
-            return request;
-        }
+        EnableTrace = trace;
+        return this;
     }
 
-    public class RemoveBucketEncryptionArgs : BucketArgs<RemoveBucketEncryptionArgs>
+    public ListenBucketNotificationsArgs WithPrefix(string prefix)
     {
-        public RemoveBucketEncryptionArgs()
-        {
-            this.RequestMethod = Method.DELETE;
-        }
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("encryption","");
-            return request;
-        }
+        Prefix = prefix;
+        return this;
     }
 
-    public class SetBucketTagsArgs : BucketArgs<SetBucketTagsArgs>
+    public ListenBucketNotificationsArgs WithSuffix(string suffix)
     {
-        internal Tagging BucketTags { get; private set; }
-        public SetBucketTagsArgs()
-        {
-            this.RequestMethod = Method.PUT;
-        }
-
-        public SetBucketTagsArgs WithTagging(Tagging tags)
-        {
-            this.BucketTags = Tagging.GetObjectTags(tags.GetTags());
-            return this;
-        }
-
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("tagging","");
-            string body = this.BucketTags.MarshalXML();
-            request.AddParameter(new Parameter("text/xml", body, ParameterType.RequestBody));
-            request.AddOrUpdateParameter("Content-MD5",
-                                          utils.getMD5SumStr(System.Text.Encoding.UTF8.GetBytes(body)),
-                                          ParameterType.HttpHeader);
-
-            return request;
-        }
-
-        internal override void Validate()
-        {
-            base.Validate();
-            if (this.BucketTags == null || this.BucketTags.GetTags().Count == 0)
-            {
-                throw new InvalidOperationException("Unable to set empty tags.");
-            }
-        }
+        Suffix = suffix;
+        return this;
     }
 
-    public class GetBucketTagsArgs : BucketArgs<GetBucketTagsArgs>
+    public ListenBucketNotificationsArgs WithEvents(List<EventType> events)
     {
-        public GetBucketTagsArgs()
+        Events.AddRange(events);
+        foreach (var ev in events)
         {
-            this.RequestMethod = Method.GET;
         }
 
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("tagging","");
-            return request;
-        }
+        return this;
+    }
+}
+
+public class SetBucketEncryptionArgs : BucketArgs<SetBucketEncryptionArgs>
+{
+    public SetBucketEncryptionArgs()
+    {
+        RequestMethod = HttpMethod.Put;
     }
 
-    public class RemoveBucketTagsArgs : BucketArgs<RemoveBucketTagsArgs>
-    {
-        public RemoveBucketTagsArgs()
-        {
-            this.RequestMethod = Method.DELETE;
-        }
+    internal ServerSideEncryptionConfiguration EncryptionConfig { get; set; }
 
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("tagging","");
-            return request;
-        }
+    public SetBucketEncryptionArgs WithEncryptionConfig(ServerSideEncryptionConfiguration config)
+    {
+        EncryptionConfig = config;
+        return this;
     }
 
-    public class SetObjectLockConfigurationArgs : BucketArgs<SetObjectLockConfigurationArgs>
+    public SetBucketEncryptionArgs WithAESConfig()
     {
-        public SetObjectLockConfigurationArgs()
-        {
-            this.RequestMethod = Method.PUT;
-        }
-
-        internal ObjectLockConfiguration LockConfiguration { set; get; }
-        public SetObjectLockConfigurationArgs WithLockConfiguration(ObjectLockConfiguration config)
-        {
-            this.LockConfiguration = config;
-            return this;
-        }
-
-        internal override void Validate()
-        {
-            base.Validate();
-            if (this.LockConfiguration == null)
-            {
-                throw new InvalidOperationException("The lock configuration object " + nameof(LockConfiguration) + " is not set. Please use " + nameof(WithLockConfiguration) + " to set.");
-            }
-        }
-        
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("object-lock","");
-            string body = utils.MarshalXML(this.LockConfiguration, "http://s3.amazonaws.com/doc/2006-03-01/");
-            request.AddParameter(new Parameter("text/xml", body, ParameterType.RequestBody));
-
-            return request;
-        }
+        EncryptionConfig = ServerSideEncryptionConfiguration.GetSSEConfigurationWithS3Rule();
+        return this;
     }
 
-    public class GetObjectLockConfigurationArgs : BucketArgs<GetObjectLockConfigurationArgs>
+    public SetBucketEncryptionArgs WithKMSConfig(string keyId = null)
     {
-        public GetObjectLockConfigurationArgs()
-        {
-            this.RequestMethod = Method.GET;
-        }
-
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("object-lock","");
-            return request;
-        }
+        EncryptionConfig = ServerSideEncryptionConfiguration.GetSSEConfigurationWithKMSRule(keyId);
+        return this;
     }
 
-    public class RemoveObjectLockConfigurationArgs : BucketArgs<RemoveObjectLockConfigurationArgs>
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
     {
-        public RemoveObjectLockConfigurationArgs()
-        {
-            this.RequestMethod = Method.PUT;
-        }
+        if (EncryptionConfig == null)
+            EncryptionConfig = ServerSideEncryptionConfiguration.GetSSEConfigurationWithS3Rule();
 
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("object-lock","");
-            string body = utils.MarshalXML(new ObjectLockConfiguration(), "http://s3.amazonaws.com/doc/2006-03-01/");
-            request.AddParameter(new Parameter("text/xml", body, ParameterType.RequestBody));
+        requestMessageBuilder.AddQueryParameter("encryption", "");
+        var body = utils.MarshalXML(EncryptionConfig, "http://s3.amazonaws.com/doc/2006-03-01/");
+        // Convert string to a byte array
+        var bodyInBytes = Encoding.ASCII.GetBytes(body);
+        requestMessageBuilder.BodyParameters.Add("content-type", "text/xml");
+        requestMessageBuilder.SetBody(bodyInBytes);
 
-            return request;
-        }
+        return requestMessageBuilder;
+    }
+}
+
+public class GetBucketEncryptionArgs : BucketArgs<GetBucketEncryptionArgs>
+{
+    public GetBucketEncryptionArgs()
+    {
+        RequestMethod = HttpMethod.Get;
     }
 
-    public class SetBucketLifecycleArgs : BucketArgs<SetBucketLifecycleArgs>
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
     {
-        internal LifecycleConfiguration BucketLifecycle { get; private set; }
-        public SetBucketLifecycleArgs()
-        {
-            this.RequestMethod = Method.PUT;
-        }
+        requestMessageBuilder.AddQueryParameter("encryption", "");
+        return requestMessageBuilder;
+    }
+}
 
-        public SetBucketLifecycleArgs WithLifecycleConfiguration(LifecycleConfiguration lc)
-        {
-            this.BucketLifecycle = lc;
-            return this;
-        }
-
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("lifecycle","");
-            string body = this.BucketLifecycle.MarshalXML();
-            request.AddParameter(new Parameter("text/xml", body, ParameterType.RequestBody));
-            request.AddOrUpdateParameter("Content-MD5",
-                                          utils.getMD5SumStr(System.Text.Encoding.UTF8.GetBytes(body)),
-                                          ParameterType.HttpHeader);
-            return request;
-        }
-
-        internal override void Validate()
-        {
-            base.Validate();
-            if (this.BucketLifecycle == null || this.BucketLifecycle.Rules.Count == 0)
-            {
-                throw new InvalidOperationException("Unable to set empty Lifecycle configuration.");
-            }
-        }
+public class RemoveBucketEncryptionArgs : BucketArgs<RemoveBucketEncryptionArgs>
+{
+    public RemoveBucketEncryptionArgs()
+    {
+        RequestMethod = HttpMethod.Delete;
     }
 
-    public class GetBucketLifecycleArgs : BucketArgs<GetBucketLifecycleArgs>
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
     {
-        public GetBucketLifecycleArgs()
-        {
-            this.RequestMethod = Method.GET;
-        }
+        requestMessageBuilder.AddQueryParameter("encryption", "");
+        return requestMessageBuilder;
+    }
+}
 
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("lifecycle","");
-            return request;
-        }
+public class SetBucketTagsArgs : BucketArgs<SetBucketTagsArgs>
+{
+    public SetBucketTagsArgs()
+    {
+        RequestMethod = HttpMethod.Put;
     }
 
-    public class RemoveBucketLifecycleArgs : BucketArgs<RemoveBucketLifecycleArgs>
-    {
-        public RemoveBucketLifecycleArgs()
-        {
-            this.RequestMethod = Method.DELETE;
-        }
+    internal Tagging BucketTags { get; private set; }
 
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("lifecycle","");
-            return request;
-        }
+    public SetBucketTagsArgs WithTagging(Tagging tags)
+    {
+        BucketTags = Tagging.GetObjectTags(tags.GetTags());
+        return this;
     }
 
-    public class GetBucketReplicationArgs : BucketArgs<GetBucketReplicationArgs>
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
     {
-        public GetBucketReplicationArgs()
-        {
-            this.RequestMethod = Method.GET;
-        }
+        requestMessageBuilder.AddQueryParameter("tagging", "");
+        var body = BucketTags.MarshalXML();
 
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("replication","");
-            return request;
-        }
+        requestMessageBuilder.AddXmlBody(body);
+        requestMessageBuilder.AddOrUpdateHeaderParameter("Content-Md5",
+            utils.getMD5SumStr(Encoding.UTF8.GetBytes(body)));
+
+        //
+        return requestMessageBuilder;
     }
 
-    public class SetBucketReplicationArgs : BucketArgs<SetBucketReplicationArgs>
+    internal override void Validate()
     {
-        internal ReplicationConfiguration BucketReplication { get; private set; }
-        public SetBucketReplicationArgs()
-        {
-            this.RequestMethod = Method.PUT;
-        }
+        base.Validate();
+        if (BucketTags == null || BucketTags.GetTags().Count == 0)
+            throw new InvalidOperationException("Unable to set empty tags.");
+    }
+}
 
-        public SetBucketReplicationArgs WithConfiguration(ReplicationConfiguration conf)
-        {
-            this.BucketReplication = conf;
-            return this;
-        }
-
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("replication","");
-            string body = this.BucketReplication.MarshalXML();
-            request.AddParameter(new Parameter("text/xml", body, ParameterType.RequestBody));
-            request.AddOrUpdateParameter("Content-MD5",
-                                          utils.getMD5SumStr(System.Text.Encoding.UTF8.GetBytes(body)),
-                                          ParameterType.HttpHeader);
-
-            return request;
-        }
+public class GetBucketTagsArgs : BucketArgs<GetBucketTagsArgs>
+{
+    public GetBucketTagsArgs()
+    {
+        RequestMethod = HttpMethod.Get;
     }
 
-    public class RemoveBucketReplicationArgs : BucketArgs<RemoveBucketReplicationArgs>
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
     {
-        public RemoveBucketReplicationArgs()
-        {
-            this.RequestMethod = Method.DELETE;
-        }
+        requestMessageBuilder.AddQueryParameter("tagging", "");
+        return requestMessageBuilder;
+    }
+}
 
-        internal override RestRequest BuildRequest(RestRequest request)
-        {
-            request.AddQueryParameter("replication","");
-            return request;
-        }
+public class RemoveBucketTagsArgs : BucketArgs<RemoveBucketTagsArgs>
+{
+    public RemoveBucketTagsArgs()
+    {
+        RequestMethod = HttpMethod.Delete;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("tagging", "");
+        return requestMessageBuilder;
+    }
+}
+
+public class SetObjectLockConfigurationArgs : BucketArgs<SetObjectLockConfigurationArgs>
+{
+    public SetObjectLockConfigurationArgs()
+    {
+        RequestMethod = HttpMethod.Put;
+    }
+
+    internal ObjectLockConfiguration LockConfiguration { set; get; }
+
+    public SetObjectLockConfigurationArgs WithLockConfiguration(ObjectLockConfiguration config)
+    {
+        LockConfiguration = config;
+        return this;
+    }
+
+    internal override void Validate()
+    {
+        base.Validate();
+        if (LockConfiguration == null)
+            throw new InvalidOperationException("The lock configuration object " + nameof(LockConfiguration) +
+                                                " is not set. Please use " + nameof(WithLockConfiguration) +
+                                                " to set.");
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("object-lock", "");
+        var body = utils.MarshalXML(LockConfiguration, "http://s3.amazonaws.com/doc/2006-03-01/");
+        // Convert string to a byte array
+        // byte[] bodyInBytes = Encoding.ASCII.GetBytes(body);
+
+        // requestMessageBuilder.BodyParameters.Add("content-type", "text/xml");
+        // requestMessageBuilder.SetBody(bodyInBytes);
+        //
+        // string body = utils.MarshalXML(config, "http://s3.amazonaws.com/doc/2006-03-01/");
+        requestMessageBuilder.AddXmlBody(body);
+        requestMessageBuilder.AddOrUpdateHeaderParameter("Content-Md5",
+            utils.getMD5SumStr(Encoding.UTF8.GetBytes(body)));
+        //
+        return requestMessageBuilder;
+    }
+}
+
+public class GetObjectLockConfigurationArgs : BucketArgs<GetObjectLockConfigurationArgs>
+{
+    public GetObjectLockConfigurationArgs()
+    {
+        RequestMethod = HttpMethod.Get;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("object-lock", "");
+        return requestMessageBuilder;
+    }
+}
+
+public class RemoveObjectLockConfigurationArgs : BucketArgs<RemoveObjectLockConfigurationArgs>
+{
+    public RemoveObjectLockConfigurationArgs()
+    {
+        RequestMethod = HttpMethod.Put;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("object-lock", "");
+        var body = utils.MarshalXML(new ObjectLockConfiguration(), "http://s3.amazonaws.com/doc/2006-03-01/");
+        requestMessageBuilder.AddXmlBody(body);
+        requestMessageBuilder.AddOrUpdateHeaderParameter("Content-Md5",
+            utils.getMD5SumStr(Encoding.UTF8.GetBytes(body)));
+        return requestMessageBuilder;
+    }
+}
+
+public class SetBucketLifecycleArgs : BucketArgs<SetBucketLifecycleArgs>
+{
+    public SetBucketLifecycleArgs()
+    {
+        RequestMethod = HttpMethod.Put;
+    }
+
+    internal LifecycleConfiguration BucketLifecycle { get; private set; }
+
+    public SetBucketLifecycleArgs WithLifecycleConfiguration(LifecycleConfiguration lc)
+    {
+        BucketLifecycle = lc;
+        return this;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("lifecycle", "");
+        var body = BucketLifecycle.MarshalXML();
+        // Convert string to a byte array
+        var bodyInBytes = Encoding.ASCII.GetBytes(body);
+        requestMessageBuilder.BodyParameters.Add("content-type", "text/xml");
+        requestMessageBuilder.SetBody(bodyInBytes);
+        requestMessageBuilder.AddOrUpdateHeaderParameter("Content-Md5",
+            utils.getMD5SumStr(bodyInBytes));
+
+        return requestMessageBuilder;
+    }
+
+    internal override void Validate()
+    {
+        base.Validate();
+        if (BucketLifecycle == null || BucketLifecycle.Rules.Count == 0)
+            throw new InvalidOperationException("Unable to set empty Lifecycle configuration.");
+    }
+}
+
+public class GetBucketLifecycleArgs : BucketArgs<GetBucketLifecycleArgs>
+{
+    public GetBucketLifecycleArgs()
+    {
+        RequestMethod = HttpMethod.Get;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("lifecycle", "");
+        return requestMessageBuilder;
+    }
+}
+
+public class RemoveBucketLifecycleArgs : BucketArgs<RemoveBucketLifecycleArgs>
+{
+    public RemoveBucketLifecycleArgs()
+    {
+        RequestMethod = HttpMethod.Delete;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("lifecycle", "");
+        return requestMessageBuilder;
+    }
+}
+
+public class GetBucketReplicationArgs : BucketArgs<GetBucketReplicationArgs>
+{
+    public GetBucketReplicationArgs()
+    {
+        RequestMethod = HttpMethod.Get;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("replication", "");
+        return requestMessageBuilder;
+    }
+}
+
+public class SetBucketReplicationArgs : BucketArgs<SetBucketReplicationArgs>
+{
+    public SetBucketReplicationArgs()
+    {
+        RequestMethod = HttpMethod.Put;
+    }
+
+    internal ReplicationConfiguration BucketReplication { get; private set; }
+
+    public SetBucketReplicationArgs WithConfiguration(ReplicationConfiguration conf)
+    {
+        BucketReplication = conf;
+        return this;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("replication", "");
+        var body = BucketReplication.MarshalXML();
+        // Convert string to a byte array
+        var bodyInBytes = Encoding.ASCII.GetBytes(body);
+        requestMessageBuilder.BodyParameters.Add("content-type", "text/xml");
+        requestMessageBuilder.SetBody(bodyInBytes);
+
+        return requestMessageBuilder;
+    }
+}
+
+public class RemoveBucketReplicationArgs : BucketArgs<RemoveBucketReplicationArgs>
+{
+    public RemoveBucketReplicationArgs()
+    {
+        RequestMethod = HttpMethod.Delete;
+    }
+
+    internal override HttpRequestMessageBuilder BuildRequest(HttpRequestMessageBuilder requestMessageBuilder)
+    {
+        requestMessageBuilder.AddQueryParameter("replication", "");
+        return requestMessageBuilder;
     }
 }
