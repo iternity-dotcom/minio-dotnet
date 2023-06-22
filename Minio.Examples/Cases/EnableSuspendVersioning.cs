@@ -14,15 +14,12 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
-
 namespace Minio.Examples.Cases;
 
-internal class EnableSuspendVersioning
+internal static class EnableSuspendVersioning
 {
     // Enable Versioning on a bucket
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name")
     {
         try
@@ -32,11 +29,11 @@ internal class EnableSuspendVersioning
             var setArgs = new SetVersioningArgs()
                 .WithBucket(bucketName)
                 .WithVersioningEnabled();
-            await minio.SetVersioningAsync(setArgs);
+            await minio.SetVersioningAsync(setArgs).ConfigureAwait(false);
             Console.WriteLine("Versioning Enable operation called for bucket " + bucketName);
             // Next Suspend the Versioning.
             setArgs = setArgs.WithVersioningSuspended();
-            await minio.SetVersioningAsync(setArgs);
+            await minio.SetVersioningAsync(setArgs).ConfigureAwait(false);
             Console.WriteLine("Versioning Suspend operation called for bucket " + bucketName);
         }
         catch (Exception e)

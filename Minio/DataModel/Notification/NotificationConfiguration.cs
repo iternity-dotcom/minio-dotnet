@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-using System.Collections.Generic;
 using System.Xml.Serialization;
 
 namespace Minio.DataModel;
@@ -48,10 +47,9 @@ public class NotificationConfiguration
 
     private Arn Arn { get; }
 
-
-    public void AddEvents(List<EventType> evnt)
+    public void AddEvents(IList<EventType> evnt)
     {
-        if (Events == null) Events = new List<EventType>();
+        Events ??= new List<EventType>();
 
         Events.AddRange(evnt);
     }
@@ -62,7 +60,7 @@ public class NotificationConfiguration
     /// <param name="suffix"></param>
     public void AddFilterSuffix(string suffix)
     {
-        if (Filter == null) Filter = new Filter();
+        Filter ??= new Filter();
 
         var newFilterRule = new FilterRule("suffix", suffix);
         // Replace any suffix rule if existing and add to the list otherwise
@@ -82,7 +80,7 @@ public class NotificationConfiguration
     /// <param name="prefix"></param>
     public void AddFilterPrefix(string prefix)
     {
-        if (Filter == null) Filter = new Filter();
+        Filter ??= new Filter();
 
         var newFilterRule = new FilterRule("prefix", prefix);
         // Replace any prefix rule if existing and add to the list otherwise
@@ -98,21 +96,21 @@ public class NotificationConfiguration
 
     public bool ShouldSerializeFilter()
     {
-        return Filter != null;
+        return Filter is not null;
     }
 
     public bool ShouldSerializeId()
     {
-        return Id != null;
+        return Id is not null;
     }
 
     public bool ShouldSerializeEvents()
     {
-        return Events != null && Events.Count > 0;
+        return Events?.Count > 0;
     }
 
     internal bool IsIdSet()
     {
-        return Id != null;
+        return Id is not null;
     }
 }

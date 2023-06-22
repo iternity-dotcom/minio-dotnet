@@ -14,17 +14,14 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Minio.DataModel;
 
 namespace Minio.Examples.Cases;
 
-internal class CopyObjectMetadata
+internal static class CopyObjectMetadata
 {
     // Copy object from one bucket to another
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string fromBucketName = "from-bucket-name",
         string fromObjectName = "from-object-name",
         string destBucketName = "dest-bucket",
@@ -54,7 +51,7 @@ internal class CopyObjectMetadata
                 .WithObject(destObjectName)
                 .WithHeaders(metadata)
                 .WithCopyObjectSource(copySourceObjectArgs);
-            await minio.CopyObjectAsync(copyObjectArgs);
+            await minio.CopyObjectAsync(copyObjectArgs).ConfigureAwait(false);
 
             Console.WriteLine(
                 $"Copied object {fromObjectName} from bucket {fromBucketName} to bucket {destBucketName}");

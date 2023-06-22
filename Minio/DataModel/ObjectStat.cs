@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Minio.DataModel.ObjectLock;
@@ -42,20 +40,25 @@ public class ObjectStat
     public uint? TaggingCount { get; private set; }
     public string ArchiveStatus { get; private set; }
     public DateTime? Expires { get; private set; }
-    public string ReplicationStatus { get; private set; }
+    public string ReplicationStatus { get; }
     public RetentionMode? ObjectLockMode { get; private set; }
     public DateTime? ObjectLockRetainUntilDate { get; private set; }
     public bool? LegalHoldEnabled { get; private set; }
 
-    public static ObjectStat FromResponseHeaders(string objectName, Dictionary<string, string> responseHeaders)
+    public static ObjectStat FromResponseHeaders(string objectName, IDictionary<string, string> responseHeaders)
     {
-        if (string.IsNullOrEmpty(objectName)) throw new ArgumentNullException("Name of an object cannot be empty");
-        var objInfo = new ObjectStat();
-        objInfo.ObjectName = objectName;
+        if (string.IsNullOrEmpty(objectName))
+            throw new ArgumentNullException(nameof(objectName), "Name of an object cannot be empty");
+        if (responseHeaders is null) throw new ArgumentNullException(nameof(responseHeaders));
+
+        var objInfo = new ObjectStat
+        {
+            ObjectName = objectName
+        };
         foreach (var paramName in responseHeaders.Keys)
         {
             var paramValue = responseHeaders[paramName];
-            switch (paramName.ToLower())
+            switch (paramName.ToLowerInvariant())
             {
                 case "content-length":
                     objInfo.Size = long.Parse(paramValue);
@@ -74,7 +77,7 @@ public class ObjectStat
                     objInfo.VersionId = paramValue;
                     break;
                 case "x-amz-delete-marker":
-                    objInfo.DeleteMarker = paramValue.Equals("true");
+                    objInfo.DeleteMarker = paramValue.Equals("true", StringComparison.OrdinalIgnoreCase);
                     break;
                 case "x-amz-archive-status":
                     objInfo.ArchiveStatus = paramValue;
@@ -93,28 +96,27 @@ public class ObjectStat
                         objInfo.Expires = DateTime.SpecifyKind(
                             DateTime.Parse(expiryMatch.Value),
                             DateTimeKind.Utc);
+
                     break;
                 case "x-amz-object-lock-mode":
                     if (!string.IsNullOrWhiteSpace(paramValue))
-                        objInfo.ObjectLockMode = paramValue.ToLower().Equals("governance")
+                        objInfo.ObjectLockMode = paramValue.Equals("governance", StringComparison.OrdinalIgnoreCase)
                             ? RetentionMode.GOVERNANCE
                             : RetentionMode.COMPLIANCE;
+
                     break;
                 case "x-amz-object-lock-retain-until-date":
                     var lockUntilDate = paramValue;
                     if (!string.IsNullOrWhiteSpace(lockUntilDate))
-                    {
                         objInfo.ObjectLockRetainUntilDate = DateTime.SpecifyKind(
                             DateTime.Parse(lockUntilDate),
                             DateTimeKind.Utc);
-                        ;
-                    }
 
                     break;
                 case "x-amz-object-lock-legal-hold":
                     var legalHoldON = paramValue.Trim();
                     if (!string.IsNullOrWhiteSpace(legalHoldON))
-                        objInfo.LegalHoldEnabled = legalHoldON.ToLower().Equals("on");
+                        objInfo.LegalHoldEnabled = legalHoldON.Equals("on", StringComparison.OrdinalIgnoreCase);
                     break;
                 default:
                     if (OperationsUtil.IsSupportedHeader(paramName))
@@ -145,16 +147,16 @@ public class ObjectStat
             if (DeleteMarker) versionInfo = $"Version ID({VersionId}, deleted)";
         }
 
-        if (Expires != null) expires = "Expiry(" + utils.To8601String(Expires.Value) + ")";
-        if (ObjectLockMode != null)
+        if (Expires is not null) expires = "Expiry(" + Utils.To8601String(Expires.Value) + ")";
+        if (ObjectLockMode is not null)
         {
             objectLockInfo = "ObjectLock Mode(" +
                              (ObjectLockMode == RetentionMode.GOVERNANCE ? "GOVERNANCE" : "COMPLIANCE") + ")";
-            objectLockInfo += " Retain Until Date(" + utils.To8601String(ObjectLockRetainUntilDate.Value) + ")";
+            objectLockInfo += " Retain Until Date(" + Utils.To8601String(ObjectLockRetainUntilDate.Value) + ")";
         }
 
-        if (TaggingCount != null) taggingCount = "Tagging-Count(" + TaggingCount.Value + ")";
-        if (LegalHoldEnabled != null)
+        if (TaggingCount is not null) taggingCount = "Tagging-Count(" + TaggingCount.Value + ")";
+        if (LegalHoldEnabled is not null)
             legalHold = "LegalHold(" + (LegalHoldEnabled.Value ? "Enabled" : "Disabled") + ")";
         if (!string.IsNullOrWhiteSpace(ReplicationStatus))
             replicationStatus = "Replication Status(" + ReplicationStatus + ")";

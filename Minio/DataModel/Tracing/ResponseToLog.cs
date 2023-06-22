@@ -14,18 +14,16 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
 using System.Net;
 
 namespace Minio.DataModel.Tracing;
 
 public sealed class ResponseToLog
 {
-    public string content { get; internal set; }
-    public Dictionary<string, string> headers { get; internal set; }
-    public HttpStatusCode statusCode { get; internal set; }
-    public Uri responseUri { get; internal set; }
-    public double durationMs { get; internal set; }
-    public string errorMessage { get; set; }
+    public string Content { get; internal set; }
+    public Dictionary<string, string> Headers { get; internal set; }
+    public HttpStatusCode StatusCode { get; internal set; }
+    public Uri ResponseUri { get; internal set; }
+    public double DurationMs { get; internal set; }
+    public string ErrorMessage { get; set; }
 }

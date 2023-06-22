@@ -14,19 +14,18 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
-
 namespace Minio.Examples.Cases;
 
-internal class SetLegalHold
+internal static class SetLegalHold
 {
     // Enable Legal Hold
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         string objectName = "my-object-name",
         string versionId = null)
     {
+        if (minio is null) throw new ArgumentNullException(nameof(minio));
+
         try
         {
             Console.WriteLine("Running example for API: SetLegalHold, enable legal hold");
@@ -37,7 +36,7 @@ internal class SetLegalHold
                 .WithObject(objectName)
                 .WithVersionId(versionId)
                 .WithLegalHold(true);
-            await minio.SetObjectLegalHoldAsync(args);
+            await minio.SetObjectLegalHoldAsync(args).ConfigureAwait(false);
             Console.WriteLine("Legal Hold status for " + bucketName + "/" + objectName +
                               (string.IsNullOrEmpty(versionId) ? " " : " with version id " + versionId + " ") +
                               " set to ON.");

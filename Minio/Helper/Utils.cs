@@ -14,26 +14,23 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Dynamic;
 using System.Globalization;
-using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml;
+using System.Xml.Linq;
 using System.Xml.Serialization;
 using Minio.Exceptions;
 using Minio.Helper;
-using Newtonsoft.Json;
 
 namespace Minio;
 
-public class utils
+public static class Utils
 {
     // We support '.' with bucket names but we fallback to using path
     // style requests instead for such buckets.
@@ -71,7 +68,7 @@ public class utils
     // http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html
     internal static void ValidateObjectName(string objectName)
     {
-        if (string.IsNullOrEmpty(objectName) || objectName.Trim() == string.Empty)
+        if (string.IsNullOrEmpty(objectName) || string.IsNullOrEmpty(objectName.Trim()))
             throw new InvalidObjectNameException(objectName, "Object name cannot be empty.");
 
         // c# strings are in utf16 format. they are already in unicode format when they arrive here.
@@ -79,7 +76,7 @@ public class utils
             throw new InvalidObjectNameException(objectName, "Object name cannot be greater than 1024 characters.");
     }
 
-    internal static void validateObjectPrefix(string objectPrefix)
+    internal static void ValidateObjectPrefix(string objectPrefix)
     {
         if (objectPrefix.Length > 512)
             throw new InvalidObjectPrefixException(objectPrefix,
@@ -127,18 +124,18 @@ public class utils
         foreach (var pathSegment in path.Split('/'))
             if (pathSegment.Length != 0)
             {
-                if (encodedPathBuf.Length > 0) encodedPathBuf.Append("/");
+                if (encodedPathBuf.Length > 0) encodedPathBuf.Append('/');
                 encodedPathBuf.Append(UrlEncode(pathSegment));
             }
 
-        if (path.StartsWith("/")) encodedPathBuf.Insert(0, "/");
-        if (path.EndsWith("/")) encodedPathBuf.Append("/");
+        if (path.StartsWith("/", StringComparison.OrdinalIgnoreCase)) encodedPathBuf.Insert(0, '/');
+        if (path.EndsWith("/", StringComparison.OrdinalIgnoreCase)) encodedPathBuf.Append('/');
         return encodedPathBuf.ToString();
     }
 
     internal static bool IsAnonymousClient(string accessKey, string secretKey)
     {
-        return secretKey == string.Empty && accessKey == string.Empty;
+        return string.IsNullOrEmpty(secretKey) && string.IsNullOrEmpty(accessKey);
     }
 
     internal static void ValidateFile(string filePath, string contentType = null)
@@ -155,7 +152,7 @@ public class utils
                 throw new ArgumentException($"'{fileName}': not a regular file", nameof(filePath));
         }
 
-        if (contentType == null) contentType = GetContentType(filePath);
+        contentType ??= GetContentType(filePath);
     }
 
     internal static string GetContentType(string fileName)
@@ -178,17 +175,23 @@ public class utils
 
     public static void MoveWithReplace(string sourceFileName, string destFileName)
     {
-        // first, delete target file if exists, as File.Move() does not support overwrite
-        if (File.Exists(destFileName)) File.Delete(destFileName);
+        try
+        {
+            // first, delete target file if exists, as File.Move() does not support overwrite
+            if (File.Exists(destFileName)) File.Delete(destFileName);
 
-        File.Move(sourceFileName, destFileName);
+            File.Move(sourceFileName, destFileName);
+        }
+        catch
+        {
+        }
     }
 
     internal static bool IsSupersetOf(IList<string> l1, IList<string> l2)
     {
-        if (l2 == null) return true;
+        if (l2 is null) return true;
 
-        if (l1 == null) return false;
+        if (l1 is null) return false;
 
         return !l2.Except(l1).Any();
     }
@@ -196,7 +199,13 @@ public class utils
     public static bool CaseInsensitiveContains(string text, string value,
         StringComparison stringComparison = StringComparison.CurrentCultureIgnoreCase)
     {
+        if (string.IsNullOrEmpty(text))
+            throw new ArgumentException($"'{nameof(text)}' cannot be null or empty.", nameof(text));
+#if NETSTANDARD
         return text.IndexOf(value, stringComparison) >= 0;
+#else
+        return text.Contains(value, stringComparison);
+#endif
     }
 
     /// <summary>
@@ -235,12 +244,14 @@ public class utils
         return expiryInt > 0 && expiryInt <= Constants.DefaultExpiryTime;
     }
 
-    internal static string getMD5SumStr(byte[] key)
+    internal static string GetMD5SumStr(ReadOnlySpan<byte> key)
     {
-        var hashedBytes = MD5
-            .Create()
-            .ComputeHash(key);
-
+#if NETSTANDARD
+        using var md5 = MD5.Create();
+        var hashedBytes = md5.ComputeHash(key.ToArray());
+#else
+        var hashedBytes = MD5.HashData(key);
+#endif
         return Convert.ToBase64String(hashedBytes);
     }
 
@@ -802,9 +813,7 @@ public class utils
 
     public static string MarshalXML(object obj, string nmspc)
     {
-        XmlSerializer xs = null;
-        XmlWriterSettings settings = null;
-        XmlSerializerNamespaces ns = null;
+        if (obj is null) throw new ArgumentNullException(nameof(obj));
 
         XmlWriter xw = null;
 
@@ -812,24 +821,27 @@ public class utils
 
         try
         {
-            settings = new XmlWriterSettings();
-            settings.OmitXmlDeclaration = true;
-
-            ns = new XmlSerializerNamespaces();
+            var settings = new XmlWriterSettings
+            {
+                OmitXmlDeclaration = true
+            };
+            var ns = new XmlSerializerNamespaces();
             ns.Add("", nmspc);
 
-            var sw = new StringWriter(CultureInfo.InvariantCulture);
+            using var sw = new StringWriter(CultureInfo.InvariantCulture);
 
-            xs = new XmlSerializer(obj.GetType());
-            xw = XmlWriter.Create(sw, settings);
-            xs.Serialize(xw, obj, ns);
-            xw.Flush();
+            var xs = new XmlSerializer(obj.GetType());
+            using (xw = XmlWriter.Create(sw, settings))
+            {
+                xs.Serialize(xw, obj, ns);
+                xw.Flush();
 
-            str = sw.ToString();
+                str = sw.ToString();
+            }
         }
         finally
         {
-            if (xw != null) xw.Close();
+            xw?.Close();
         }
 
         return str;
@@ -851,13 +863,12 @@ public class utils
         var patternToMatch = @"<\w+\s+xmlns=""http://s3.amazonaws.com/doc/2006-03-01/""\s*>";
         if (Regex.Match(config, patternToMatch, regexOptions).Success)
             patternToReplace = @"xmlns=""http://s3.amazonaws.com/doc/2006-03-01/""\s*";
-        config = Regex.Replace(
+        return Regex.Replace(
             config,
             patternToReplace,
             string.Empty,
             regexOptions
         );
-        return config;
     }
 
     public static DateTime From8601String(string dt)
@@ -869,22 +880,25 @@ public class utils
     {
         if (string.IsNullOrEmpty(endpoint))
             throw new ArgumentException(
-                string.Format("{0} is the value of the endpoint. It can't be null or empty.", endpoint), "endpoint");
-        if (endpoint.EndsWith("/")) endpoint = endpoint.Substring(0, endpoint.Length - 1);
-        if (!endpoint.StartsWith("http") && !BuilderUtil.IsValidHostnameOrIPAddress(endpoint))
+                string.Format("{0} is the value of the endpoint. It can't be null or empty.", endpoint),
+                nameof(endpoint));
+
+        if (endpoint.EndsWith("/", StringComparison.OrdinalIgnoreCase))
+            endpoint = endpoint.Substring(0, endpoint.Length - 1);
+        if (!endpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase) &&
+            !BuilderUtil.IsValidHostnameOrIPAddress(endpoint))
             throw new InvalidEndpointException(string.Format("{0} is invalid hostname.", endpoint), "endpoint");
         string conn_url;
-        if (endpoint.StartsWith("http"))
+        if (endpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             throw new InvalidEndpointException(
                 string.Format("{0} the value of the endpoint has the scheme (http/https) in it.", endpoint),
                 "endpoint");
+
         var enable_https = Environment.GetEnvironmentVariable("ENABLE_HTTPS");
-        var scheme = enable_https != null && enable_https.Equals("1") ? "https://" : "http://";
+        var scheme = enable_https?.Equals("1", StringComparison.OrdinalIgnoreCase) == true ? "https://" : "http://";
         conn_url = scheme + endpoint;
-        var hostnameOfUri = string.Empty;
-        Uri url = null;
-        url = new Uri(conn_url);
-        hostnameOfUri = url.Authority;
+        var url = new Uri(conn_url);
+        var hostnameOfUri = url.Authority;
         if (!string.IsNullOrWhiteSpace(hostnameOfUri) && !BuilderUtil.IsValidHostnameOrIPAddress(hostnameOfUri))
             throw new InvalidEndpointException(string.Format("{0}, {1} is invalid hostname.", endpoint, hostnameOfUri),
                 "endpoint");
@@ -894,54 +908,132 @@ public class utils
 
     internal static HttpRequestMessageBuilder GetEmptyRestRequest(HttpRequestMessageBuilder requestBuilder)
     {
-        var serializedBody = JsonConvert.SerializeObject("");
+        var serializedBody = JsonSerializer.Serialize("");
         requestBuilder.AddOrUpdateHeaderParameter("application/json; charset=utf-8", serializedBody);
         return requestBuilder;
     }
 
     // Converts an object to a byte array
-    public static byte[] ObjectToByteArray(object obj)
+    public static ReadOnlyMemory<byte> ObjectToByteArray(object obj)
     {
-        if (obj == null)
-            return null;
-        var serializer = new XmlSerializer(typeof(object));
-        using (var ms = new MemoryStream())
+        switch (obj)
         {
-            serializer.Serialize(ms, obj);
-            return ms.ToArray();
+            case null:
+            case Memory<byte> memory when memory.IsEmpty:
+            case ReadOnlyMemory<byte> readOnlyMemory when readOnlyMemory.IsEmpty:
+                return null;
+            default:
+                return JsonSerializer.SerializeToUtf8Bytes(obj);
         }
     }
 
     // Print object key properties and their values
     // Added for debugging purposes
 
-    public static void objPrint(object obj)
+    public static void ObjPrint(object obj)
     {
         foreach (PropertyDescriptor descriptor in TypeDescriptor.GetProperties(obj))
         {
             var name = descriptor.Name;
             var value = descriptor.GetValue(obj);
-            Console.WriteLine("{0}={1}", name, value);
+            Console.WriteLine($"{name}={value}");
         }
     }
 
     public static void Print(object obj)
     {
+        if (obj is null) throw new ArgumentNullException(nameof(obj));
+
         foreach (var prop in obj.GetType()
                      .GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
         {
-            var value = prop.GetValue(obj, new object[] { });
+            var value = prop.GetValue(obj, Array.Empty<object>());
             Console.WriteLine("DEBUG >>   {0} = {1}", prop.Name, value);
         }
 
         Console.WriteLine("DEBUG >>   Print is DONE!\n\n");
     }
 
-    public static void printDict(Dictionary<string, string> d)
+    public static void PrintDict(IDictionary<string, string> d)
     {
-        if (d != null)
+        if (d is not null)
             foreach (var kv in d)
                 Console.WriteLine("DEBUG >>        {0} = {1}", kv.Key, kv.Value);
+
         Console.WriteLine("DEBUG >>   Done printing\n");
     }
+
+    public static string DetermineNamespace(XDocument document)
+    {
+        if (document is null) throw new ArgumentNullException(nameof(document));
+
+        return document.Root.Attributes().FirstOrDefault(attr => attr.IsNamespaceDeclaration)?.Value ?? string.Empty;
+    }
+
+    public static string SerializeToXml<T>(T anyobject) where T : class
+    {
+        if (anyobject is null) throw new ArgumentNullException(nameof(anyobject));
+
+        var xs = new XmlSerializer(anyobject.GetType());
+        using var sw = new StringWriter(CultureInfo.InvariantCulture);
+        using var xw = XmlWriter.Create(sw);
+
+        xs.Serialize(xw, anyobject);
+        xw.Flush();
+
+        return sw.ToString();
+    }
+
+    public static T DeserializeXml<T>(Stream stream) where T : class
+    {
+        try
+        {
+            var ns = GetNamespace<T>();
+            if (!string.IsNullOrWhiteSpace(ns) && ns is "http://s3.amazonaws.com/doc/2006-03-01/")
+            {
+                using var amazonAwsS3XmlReader = new AmazonAwsS3XmlReader(stream);
+                return (T)new XmlSerializer(typeof(T)).Deserialize(amazonAwsS3XmlReader);
+            }
+
+            return (T)new XmlSerializer(typeof(T)).Deserialize(stream);
+        }
+        catch (Exception)
+        {
+        }
+
+        return default;
+    }
+
+    public static T DeserializeXml<T>(string xml) where T : class
+    {
+        try
+        {
+            var serializer = new XmlSerializer(typeof(T));
+            using var stringReader = new StringReader(xml);
+            return (T)serializer.Deserialize(stringReader);
+        }
+        catch (Exception)
+        {
+        }
+
+        return default;
+    }
+
+    private static string GetNamespace<T>()
+    {
+        if (typeof(T).GetCustomAttributes(typeof(XmlRootAttribute), true)
+                .FirstOrDefault() is XmlRootAttribute xmlRootAttribute)
+            return xmlRootAttribute.Namespace;
+
+        return null;
+    }
+}
+
+public class AmazonAwsS3XmlReader : XmlTextReader
+{
+    public AmazonAwsS3XmlReader(Stream stream) : base(stream)
+    {
+    }
+
+    public override string NamespaceURI => "http://s3.amazonaws.com/doc/2006-03-01/";
 }

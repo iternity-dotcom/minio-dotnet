@@ -14,23 +14,22 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Minio.DataModel.Tags;
 
 namespace Minio.Examples.Cases;
 
-internal class PutObjectWithTags
+internal static class PutObjectWithTags
 {
     private const int MB = 1024 * 1024;
 
     // Put an object from a local stream into bucket
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         string objectName = "my-object-name",
         string fileName = "location-of-file")
     {
+        if (minio is null) throw new ArgumentNullException(nameof(minio));
+
         try
         {
             Console.WriteLine("Running example for API: PutObjectAsync with Tags");
@@ -44,7 +43,7 @@ internal class PutObjectWithTags
                 .WithContentType("application/octet-stream")
                 .WithFileName(fileName)
                 .WithTagging(Tagging.GetObjectTags(tags));
-            await minio.PutObjectAsync(args);
+            await minio.PutObjectAsync(args).ConfigureAwait(false);
 
             Console.WriteLine($"Uploaded object {objectName} to bucket {bucketName}");
             Console.WriteLine();

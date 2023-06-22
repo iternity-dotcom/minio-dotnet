@@ -14,15 +14,12 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
-
 namespace Minio.Examples.Cases;
 
-internal class GetBucketNotification
+internal static class GetBucketNotification
 {
     // Get bucket notifications - this works only with AWS endpoint
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name")
     {
         try
@@ -30,7 +27,7 @@ internal class GetBucketNotification
             Console.WriteLine("Running example for API: GetBucketNotificationsAsync");
             var args = new GetBucketNotificationsArgs()
                 .WithBucket(bucketName);
-            var notifications = await minio.GetBucketNotificationsAsync(args);
+            var notifications = await minio.GetBucketNotificationsAsync(args).ConfigureAwait(false);
             Console.WriteLine($"Notifications is {notifications.ToXML()} for bucket {bucketName}");
             Console.WriteLine();
         }
