@@ -15,10 +15,6 @@
 * limitations under the License.
 */
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Web;
@@ -56,6 +52,7 @@ internal class HttpRequestMessageBuilder
 
     public Uri RequestUri { get; set; }
     public Action<Stream> ResponseWriter { get; set; }
+    public Func<Stream, CancellationToken, Task> FunctionResponseWriter { get; set; }
     public HttpMethod Method { get; }
 
     public HttpRequestMessage Request
@@ -73,19 +70,20 @@ internal class HttpRequestMessageBuilder
             var requestUri = requestUriBuilder.Uri;
             var request = new HttpRequestMessage(Method, requestUri);
 
-            if (Content != null) request.Content = new ByteArrayContent(Content);
-
+#if NETSTANDARD
+            if (!Content.IsEmpty) request.Content = new ByteArrayContent(Content.ToArray());
+#else
+            if (!Content.IsEmpty) request.Content = new ReadOnlyMemoryContent(Content);
+#endif
             foreach (var parameter in HeaderParameters)
             {
-                var key = parameter.Key.ToLower();
+                var key = parameter.Key.ToLowerInvariant();
                 var val = parameter.Value;
-
 
                 var addSuccess = request.Headers.TryAddWithoutValidation(key, val);
                 if (!addSuccess)
                 {
-                    if (request.Content == null)
-                        request.Content = new StringContent("");
+                    request.Content ??= new StringContent("");
                     switch (key)
                     {
                         case "content-type":
@@ -112,18 +110,16 @@ internal class HttpRequestMessageBuilder
                 }
             }
 
-            if (request.Content != null)
+            if (request.Content is not null)
             {
                 var isMultiDeleteRequest = false;
                 if (Method == HttpMethod.Post) isMultiDeleteRequest = QueryParameters.ContainsKey("delete");
                 var isSecure = RequestUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase);
 
                 if (!isSecure && !isMultiDeleteRequest &&
-                    BodyParameters.ContainsKey("Content-Md5") &&
-                    BodyParameters["Content-Md5"] != null)
+                    BodyParameters.TryGetValue("Content-Md5", out var value) && value is not null)
                 {
-                    var returnValue = "";
-                    BodyParameters.TryGetValue("Content-Md5", out returnValue);
+                    BodyParameters.TryGetValue("Content-Md5", out var returnValue);
                     request.Content.Headers.ContentMD5 = Convert.FromBase64String(returnValue);
                 }
             }
@@ -138,7 +134,7 @@ internal class HttpRequestMessageBuilder
 
     public Dictionary<string, string> BodyParameters { get; }
 
-    public byte[] Content { get; private set; }
+    public ReadOnlyMemory<byte> Content { get; private set; }
 
     public string ContentTypeKey => "Content-Type";
 
@@ -149,12 +145,13 @@ internal class HttpRequestMessageBuilder
             !string.IsNullOrEmpty(value) &&
             !BodyParameters.ContainsKey(key))
             BodyParameters.Add(key, value);
+
         HeaderParameters[key] = value;
     }
 
     public void AddOrUpdateHeaderParameter(string key, string value)
     {
-        if (HeaderParameters.GetType().GetProperty(key) != null)
+        if (HeaderParameters.GetType().GetProperty(key) is not null)
             HeaderParameters.Remove(key);
         HeaderParameters[key] = value;
     }
@@ -169,7 +166,7 @@ internal class HttpRequestMessageBuilder
         QueryParameters[key] = value;
     }
 
-    public void SetBody(byte[] body)
+    public void SetBody(ReadOnlyMemory<byte> body)
     {
         Content = body;
     }

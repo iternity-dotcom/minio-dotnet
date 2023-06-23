@@ -14,21 +14,18 @@
  * limitations under the License.
  */
 
-using System.Collections.Generic;
-
 namespace Minio;
 
 public abstract class BucketArgs<T> : Args
     where T : BucketArgs<T>
 {
-    public BucketArgs()
-    {
-        Headers = new Dictionary<string, string>();
-    }
+    protected const string BucketForceDeleteKey = "X-Minio-Force-Delete";
+
+    public bool IsBucketCreationRequest { get; set; }
 
     internal string BucketName { get; set; }
 
-    internal Dictionary<string, string> Headers { get; set; }
+    internal IDictionary<string, string> Headers { get; set; } = new Dictionary<string, string>();
 
     public T WithBucket(string bucket)
     {
@@ -36,14 +33,13 @@ public abstract class BucketArgs<T> : Args
         return (T)this;
     }
 
-    public T WithHeaders(Dictionary<string, string> headers)
+    public virtual T WithHeaders(IDictionary<string, string> headers)
     {
-        if (headers == null || headers.Count <= 0) return (T)this;
-        Headers = Headers ?? new Dictionary<string, string>();
+        if (headers is null || headers.Count <= 0) return (T)this;
+        Headers ??= new Dictionary<string, string>();
         foreach (var key in headers.Keys)
         {
-            if (Headers.ContainsKey(key))
-                Headers.Remove(key);
+            Headers.Remove(key);
             Headers[key] = headers[key];
         }
 
@@ -52,6 +48,6 @@ public abstract class BucketArgs<T> : Args
 
     internal virtual void Validate()
     {
-        utils.ValidateBucketName(BucketName);
+        Utils.ValidateBucketName(BucketName);
     }
 }

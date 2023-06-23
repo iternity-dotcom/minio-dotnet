@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-using System;
 using System.Globalization;
 
 namespace Minio.DataModel;
@@ -32,7 +31,7 @@ public class Item
         get => etag;
         set
         {
-            if (value != null)
+            if (value is not null)
                 etag = value.Replace("\"", string.Empty);
             else
                 etag = null;

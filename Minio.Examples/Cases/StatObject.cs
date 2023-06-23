@@ -14,15 +14,12 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Minio.DataModel;
 using Minio.Exceptions;
 
 namespace Minio.Examples.Cases;
 
-internal class StatObject
+internal static class StatObject
 {
     public static void PrintStat(string bucketObject, ObjectStat statObject)
     {
@@ -35,11 +32,13 @@ internal class StatObject
     }
 
     // Get stats on a object
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         string bucketObject = "my-object-name",
         string versionID = null)
     {
+        if (minio is null) throw new ArgumentNullException(nameof(minio));
+
         try
         {
             Console.WriteLine("Running example for API: StatObjectAsync");
@@ -48,7 +47,7 @@ internal class StatObject
                 var objectStatArgs = new StatObjectArgs()
                     .WithBucket(bucketName)
                     .WithObject(bucketObject);
-                var statObject = await minio.StatObjectAsync(objectStatArgs);
+                var statObject = await minio.StatObjectAsync(objectStatArgs).ConfigureAwait(false);
                 PrintStat(bucketObject, statObject);
                 PrintMetaData(statObject.MetaData);
                 return;
@@ -58,7 +57,7 @@ internal class StatObject
                 .WithBucket(bucketName)
                 .WithObject(bucketObject)
                 .WithVersionId(versionID);
-            var statObjectVersion = await minio.StatObjectAsync(args);
+            var statObjectVersion = await minio.StatObjectAsync(args).ConfigureAwait(false);
             PrintStat(bucketObject, statObjectVersion);
             PrintMetaData(statObjectVersion.MetaData);
         }
@@ -66,8 +65,8 @@ internal class StatObject
         {
             var objectNameInfo = $"{bucketName}-{bucketObject}";
             if (!string.IsNullOrEmpty(versionID))
-                objectNameInfo = objectNameInfo +
-                                 $" (Version ID) {me.Response.VersionId} (Delete Marker) {me.Response.DeleteMarker}";
+                objectNameInfo += $" (Version ID) {me.Response.VersionId} (Delete Marker) {me.Response.DeleteMarker}";
+
             Console.WriteLine($"[StatObject] {objectNameInfo} Exception: {me}");
         }
         catch (Exception e)
@@ -76,7 +75,7 @@ internal class StatObject
         }
     }
 
-    private static void PrintMetaData(Dictionary<string, string> metaData)
+    private static void PrintMetaData(IDictionary<string, string> metaData)
     {
         Console.WriteLine("Metadata:");
         foreach (var metaPair in metaData) Console.WriteLine("    " + metaPair.Key + ":\t" + metaPair.Value);

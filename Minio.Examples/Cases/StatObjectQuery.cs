@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
 using Minio.DataModel;
 using Minio.Exceptions;
 
 namespace Minio.Examples.Cases;
 
-internal class StatObjectQuery
+internal static class StatObjectQuery
 {
     public static void PrintStat(string bucketObject, ObjectStat statObject)
     {
@@ -34,13 +32,15 @@ internal class StatObjectQuery
     }
 
     // Get stats on a object
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         string bucketObject = "my-object-name",
         string versionID = null,
         string matchEtag = null,
         DateTime modifiedSince = default)
     {
+        if (minio is null) throw new ArgumentNullException(nameof(minio));
+
         try
         {
             Console.WriteLine("Running example for API: StatObjectAsync [with ObjectQuery]");
@@ -51,7 +51,7 @@ internal class StatObjectQuery
                 .WithVersionId(versionID)
                 .WithMatchETag(matchEtag)
                 .WithModifiedSince(modifiedSince);
-            var statObjectVersion = await minio.StatObjectAsync(args);
+            var statObjectVersion = await minio.StatObjectAsync(args).ConfigureAwait(false);
             PrintStat(bucketObject, statObjectVersion);
         }
         catch (MinioException me)
@@ -60,6 +60,7 @@ internal class StatObjectQuery
             if (!string.IsNullOrEmpty(versionID))
                 objectNameInfo = objectNameInfo +
                                  $" (Version ID) {me.Response.VersionId} (Marked DEL) {me.Response.DeleteMarker}";
+
             Console.WriteLine($"[StatObject] {objectNameInfo} Exception: {me}");
         }
         catch (Exception e)

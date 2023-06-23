@@ -19,8 +19,10 @@ namespace Minio;
 public abstract class ObjectArgs<T> : BucketArgs<T>
     where T : ObjectArgs<T>
 {
+    protected const string S3ZipExtractKey = "X-Minio-Extract";
+
     internal string ObjectName { get; set; }
-    internal byte[] RequestBody { get; set; }
+    internal ReadOnlyMemory<byte> RequestBody { get; set; }
 
     public T WithObject(string obj)
     {
@@ -28,7 +30,7 @@ public abstract class ObjectArgs<T> : BucketArgs<T>
         return (T)this;
     }
 
-    public T WithRequestBody(byte[] data)
+    public T WithRequestBody(ReadOnlyMemory<byte> data)
     {
         RequestBody = data;
         return (T)this;
@@ -37,6 +39,6 @@ public abstract class ObjectArgs<T> : BucketArgs<T>
     internal override void Validate()
     {
         base.Validate();
-        utils.ValidateObjectName(ObjectName);
+        Utils.ValidateObjectName(ObjectName);
     }
 }

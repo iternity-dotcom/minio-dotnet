@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-using System;
 using System.Xml.Serialization;
 
 /*
@@ -33,8 +32,11 @@ public class LifecycleRule
     public static readonly string LIFECYCLE_RULE_STATUS_ENABLED = "Enabled";
     public static readonly string LIFECYCLE_RULE_STATUS_DISABLED = "Disabled";
 
+    private RuleFilter _ruleFilter;
+
     public LifecycleRule()
     {
+        _ruleFilter = new RuleFilter();
     }
 
     public LifecycleRule(AbortIncompleteMultipartUpload abortIncompleteMultipartUpload, string id,
@@ -43,7 +45,11 @@ public class LifecycleRule
         NoncurrentVersionTransition noncurrentVersionTransition,
         string status)
     {
-        if (!status.Equals(LIFECYCLE_RULE_STATUS_ENABLED) && !status.Equals(LIFECYCLE_RULE_STATUS_DISABLED))
+        if (string.IsNullOrEmpty(status))
+            throw new ArgumentException($"'{nameof(status)}' cannot be null or empty.", nameof(status));
+
+        if (!status.Equals(LIFECYCLE_RULE_STATUS_ENABLED, StringComparison.Ordinal) &&
+            !status.Equals(LIFECYCLE_RULE_STATUS_DISABLED, StringComparison.Ordinal))
             throw new ArgumentException("Wrong value assignment for " + nameof(Status));
         AbortIncompleteMultipartUploadObject = abortIncompleteMultipartUpload;
         ID = id;
@@ -67,7 +73,18 @@ public class LifecycleRule
     public Transition TransitionObject { get; set; }
 
     [XmlElement("Filter", IsNullable = true)]
-    public RuleFilter Filter { get; set; }
+    public RuleFilter Filter
+    {
+        get => _ruleFilter;
+        set
+        {
+            // The filter must not be missing, even if it is empty.
+            if (value is null)
+                _ruleFilter = new RuleFilter();
+            else
+                _ruleFilter = value;
+        }
+    }
 
     [XmlElement("NoncurrentVersionExpiration", IsNullable = true)]
     public NoncurrentVersionExpiration NoncurrentVersionExpirationObject { get; set; }
