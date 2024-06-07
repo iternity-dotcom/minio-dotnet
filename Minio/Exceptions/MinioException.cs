@@ -15,20 +15,26 @@
  * limitations under the License.
  */
 
-using System;
+using Minio.DataModel.Result;
 
 namespace Minio.Exceptions;
 
 [Serializable]
 public class MinioException : Exception
 {
-    public MinioException(ResponseResult serverResponse)
-        : this(null, serverResponse)
+    public MinioException()
     {
     }
 
-    public MinioException(string message)
-        : this(message, null)
+    public MinioException(string message, Exception innerException) : base(message, innerException)
+    {
+    }
+
+    public MinioException(ResponseResult serverResponse) : this(null, serverResponse)
+    {
+    }
+
+    public MinioException(string message) : this(message, serverResponse: null)
     {
     }
 
@@ -49,19 +55,16 @@ public class MinioException : Exception
 
     private static string GetMessage(string message, ResponseResult serverResponse)
     {
-        if (serverResponse == null && string.IsNullOrEmpty(message))
+        if (serverResponse is null && string.IsNullOrEmpty(message))
             throw new ArgumentNullException(nameof(message));
 
-        if (serverResponse == null)
+        if (serverResponse is null)
             return $"MinIO API responded with message={message}";
 
         var contentString = serverResponse.Content;
 
-        if (message == null)
-            return
-                $"MinIO API responded with status code={serverResponse.StatusCode}, response={serverResponse.ErrorMessage}, content={contentString}";
-
-        return
-            $"MinIO API responded with message={message}. Status code={serverResponse.StatusCode}, response={serverResponse.ErrorMessage}, content={contentString}";
+        return message is null
+            ? $"MinIO API responded with status code={serverResponse.StatusCode}, response={serverResponse.ErrorMessage}, content={contentString}"
+            : $"MinIO API responded with message={message}. Status code={serverResponse.StatusCode}, response={serverResponse.ErrorMessage}, content={contentString}";
     }
 }

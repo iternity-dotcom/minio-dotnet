@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-using System;
+using Minio.DataModel.Args;
 
 namespace Minio.Examples.Cases;
 
-internal class ListIncompleteUploads
+internal static class ListIncompleteUploads
 {
     // List incomplete uploads on the bucket matching specified prefix
-    public static void Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         string prefix = "my-object-name",
         bool recursive = true)
@@ -30,17 +30,21 @@ internal class ListIncompleteUploads
         {
             Console.WriteLine("Running example for API: ListIncompleteUploads");
 
-            var args = new ListIncompleteUploadsArgs()
-                .WithBucket(bucketName)
-                .WithPrefix(prefix)
-                .WithRecursive(recursive);
-            var observable = minio.ListIncompleteUploads(args);
+            try
+            {
+                var args = new ListIncompleteUploadsArgs()
+                    .WithBucket(bucketName)
+                    .WithPrefix(prefix)
+                    .WithRecursive(recursive);
+                await foreach (var item in minio.ListIncompleteUploadsEnumAsync(args).ConfigureAwait(false))
+                    Console.WriteLine($"OnNext: {item.Key}");
+            }
+            catch (Exception exc)
+            {
+                Console.WriteLine($"OnError: {exc.Message}");
+            }
 
-            var subscription = observable.Subscribe(
-                item => Console.WriteLine($"OnNext: {item.Key}"),
-                ex => Console.WriteLine($"OnError: {ex.Message}"),
-                () => Console.WriteLine($"Listed the pending uploads to bucket {bucketName}"));
-
+            Console.WriteLine($"Listed the pending uploads to bucket {bucketName}");
             Console.WriteLine();
         }
         catch (Exception e)

@@ -14,15 +14,14 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
+using Minio.DataModel.Args;
 
 namespace Minio.Examples.Cases;
 
-internal class BucketExists
+internal static class BucketExists
 {
     // Check if a bucket exists
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name")
     {
         try
@@ -30,7 +29,7 @@ internal class BucketExists
             Console.WriteLine("Running example for API: BucketExistsAsync");
             var args = new BucketExistsArgs()
                 .WithBucket(bucketName);
-            var found = await minio.BucketExistsAsync(args);
+            var found = await minio.BucketExistsAsync(args).ConfigureAwait(false);
             Console.WriteLine((found ? "Found" : "Couldn't find ") + "bucket " + bucketName);
             Console.WriteLine();
         }

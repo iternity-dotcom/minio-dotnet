@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2017 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,11 +14,30 @@
  * limitations under the License.
  */
 
+using Minio.DataModel.Result;
+
 namespace Minio.Exceptions;
 
+[Serializable]
 public class DeleteObjectException : MinioException
 {
     public DeleteObjectException(string message) : base(message)
+    {
+    }
+
+    public DeleteObjectException(ResponseResult serverResponse) : base(serverResponse)
+    {
+    }
+
+    public DeleteObjectException(string message, ResponseResult serverResponse) : base(message, serverResponse)
+    {
+    }
+
+    public DeleteObjectException()
+    {
+    }
+
+    public DeleteObjectException(string message, Exception innerException) : base(message, innerException)
     {
     }
 }

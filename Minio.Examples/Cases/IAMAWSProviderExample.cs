@@ -15,37 +15,38 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
 using Minio.Credentials;
+using Minio.DataModel.Args;
 using Minio.Exceptions;
 
 namespace Minio.Examples.Cases;
 
-public class IAMAWSProviderExample
+public static class IAMAWSProviderExample
 {
     // Establish Credentials with AWS IAM Credentials
     public static async Task Run()
     {
-        var provider = new IAMAWSProvider();
         var minioClient = new MinioClient()
             .WithEndpoint("s3.amazonaws.com")
             .WithSSL()
-            .WithCredentialsProvider(provider)
+            .WithCredentials("fake_access", "fake_secret") // still required, but can be set to any valid string
             .WithRegion("us-west-2")
             .Build();
-        provider = provider.WithMinioClient(minioClient);
+
+        // IAMAWSProvider should be assigned "after" the minio client has been build
+        minioClient = minioClient.WithCredentialsProvider(new IAMAWSProvider(minioClient.Config.Endpoint, minioClient));
+
         try
         {
             var statObjectArgs = new StatObjectArgs()
                 .WithBucket("my-bucket-name")
                 .WithObject("my-object-name");
-            var result = await minioClient.StatObjectAsync(statObjectArgs);
+            var result = await minioClient.StatObjectAsync(statObjectArgs).ConfigureAwait(false);
             Console.WriteLine("Object Stat: \n" + result);
         }
         catch (MinioException me)
         {
-            Console.WriteLine($"[Bucket] IAMAWSProviderExample example case encountered Exception: {me}");
+            Console.WriteLine($"[Bucket] IAMAWSProviderExample example case encountered MinioException: {me}");
         }
         catch (Exception e)
         {

@@ -14,19 +14,20 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
+using Minio.DataModel.Args;
 
 namespace Minio.Examples.Cases;
 
-internal class RemoveObject
+internal static class RemoveObject
 {
     // Remove an object from a bucket
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         string objectName = "my-object-name",
         string versionId = null)
     {
+        if (minio is null) throw new ArgumentNullException(nameof(minio));
+
         try
         {
             var args = new RemoveObjectArgs()
@@ -40,7 +41,7 @@ internal class RemoveObject
             }
 
             Console.WriteLine("Running example for API: RemoveObjectAsync");
-            await minio.RemoveObjectAsync(args);
+            await minio.RemoveObjectAsync(args).ConfigureAwait(false);
             Console.WriteLine($"Removed object {objectName} from bucket {bucketName}{versions} successfully");
             Console.WriteLine();
         }

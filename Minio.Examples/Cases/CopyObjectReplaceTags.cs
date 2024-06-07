@@ -14,17 +14,15 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using Minio.DataModel.Args;
 using Minio.DataModel.Tags;
 
 namespace Minio.Examples.Cases;
 
-internal class CopyObjectReplaceTags
+internal static class CopyObjectReplaceTags
 {
     // Copy object from one bucket to another, replace tags in the copied object
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string fromBucketName = "from-bucket-name",
         string fromObjectName = "from-object-name",
         string destBucketName = "dest-bucket",
@@ -34,9 +32,7 @@ internal class CopyObjectReplaceTags
         {
             Console.WriteLine("Running example for API: CopyObjectAsync with Tags");
             var tags = new Dictionary<string, string>
-            {
-                { "Test-TagKey", "Test-TagValue" }
-            };
+                (StringComparer.Ordinal) { { "Test-TagKey", "Test-TagValue" } };
             var tagObj = Tagging.GetObjectTags(tags);
             var cpSrcArgs = new CopySourceObjectArgs()
                 .WithBucket(fromBucketName)

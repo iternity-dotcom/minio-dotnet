@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2021 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-using System;
 using System.Xml.Serialization;
 
 /*
@@ -30,11 +29,14 @@ namespace Minio.DataModel.ILM;
 [XmlRoot(ElementName = "Rule")]
 public class LifecycleRule
 {
-    public static readonly string LIFECYCLE_RULE_STATUS_ENABLED = "Enabled";
-    public static readonly string LIFECYCLE_RULE_STATUS_DISABLED = "Disabled";
+    public static readonly string LifecycleRuleStatusEnabled = "Enabled";
+    public static readonly string LifecycleRuleStatusDisabled = "Disabled";
+
+    private RuleFilter filter;
 
     public LifecycleRule()
     {
+        filter = new RuleFilter();
     }
 
     public LifecycleRule(AbortIncompleteMultipartUpload abortIncompleteMultipartUpload, string id,
@@ -43,8 +45,12 @@ public class LifecycleRule
         NoncurrentVersionTransition noncurrentVersionTransition,
         string status)
     {
-        if (!status.Equals(LIFECYCLE_RULE_STATUS_ENABLED) && !status.Equals(LIFECYCLE_RULE_STATUS_DISABLED))
-            throw new ArgumentException("Wrong value assignment for " + nameof(Status));
+        if (string.IsNullOrEmpty(status))
+            throw new ArgumentException($"'{nameof(status)}' cannot be null or empty.", nameof(status));
+
+        if (!status.Equals(LifecycleRuleStatusEnabled, StringComparison.Ordinal) &&
+            !status.Equals(LifecycleRuleStatusDisabled, StringComparison.Ordinal))
+            throw new ArgumentException("Wrong value assignment", nameof(status));
         AbortIncompleteMultipartUploadObject = abortIncompleteMultipartUpload;
         ID = id;
         Expiration = expiration;
@@ -67,7 +73,18 @@ public class LifecycleRule
     public Transition TransitionObject { get; set; }
 
     [XmlElement("Filter", IsNullable = true)]
-    public RuleFilter Filter { get; set; }
+    public RuleFilter Filter
+    {
+        get => filter;
+        set
+        {
+            // The filter must not be missing, even if it is empty.
+            if (value is null)
+                filter = new RuleFilter();
+            else
+                filter = value;
+        }
+    }
 
     [XmlElement("NoncurrentVersionExpiration", IsNullable = true)]
     public NoncurrentVersionExpiration NoncurrentVersionExpirationObject { get; set; }

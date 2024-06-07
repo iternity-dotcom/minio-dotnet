@@ -14,19 +14,20 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
+using Minio.DataModel.Args;
 using Minio.DataModel.ObjectLock;
 
 namespace Minio.Examples.Cases;
 
-public class SetObjectLockConfiguration
+public static class SetObjectLockConfiguration
 {
     // Set Object Lock Configuration on the bucket
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         ObjectLockConfiguration config = null)
     {
+        if (minio is null) throw new ArgumentNullException(nameof(minio));
+
         try
         {
             Console.WriteLine("Running example for API: SetObjectLockConfiguration");
@@ -34,7 +35,7 @@ public class SetObjectLockConfiguration
                 new SetObjectLockConfigurationArgs()
                     .WithBucket(bucketName)
                     .WithLockConfiguration(config)
-            );
+            ).ConfigureAwait(false);
             Console.WriteLine($"Set object lock configuration on bucket {bucketName}");
             Console.WriteLine();
         }

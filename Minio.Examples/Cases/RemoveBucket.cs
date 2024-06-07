@@ -14,15 +14,14 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
+using Minio.DataModel.Args;
 
 namespace Minio.Examples.Cases;
 
-internal class RemoveBucket
+internal static class RemoveBucket
 {
     // Remove a bucket
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name")
     {
         try
@@ -30,7 +29,7 @@ internal class RemoveBucket
             await minio.RemoveBucketAsync(
                 new RemoveBucketArgs()
                     .WithBucket(bucketName)
-            );
+            ).ConfigureAwait(false);
             Console.WriteLine($"Removed the bucket {bucketName} successfully");
         }
         catch (Exception e)

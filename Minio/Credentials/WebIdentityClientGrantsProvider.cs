@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage,
  * (C) 2021 MinIO, Inc.
  *
@@ -15,29 +15,27 @@
  * limitations under the License.
  */
 
-using System;
-using System.IO;
+using System.Globalization;
 using System.Net;
-using System.Net.Http;
 using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Serialization;
+using CommunityToolkit.HighPerformance;
 using Minio.DataModel;
+using Minio.Helper;
 
 namespace Minio.Credentials;
 
 public abstract class WebIdentityClientGrantsProvider<T> : AssumeRoleBaseProvider<T>
     where T : WebIdentityClientGrantsProvider<T>
 {
-    public readonly uint MAX_DURATION_SECONDS = (uint)new TimeSpan(7, 0, 0, 0).TotalSeconds;
-    public readonly uint MIN_DURATION_SECONDS = 15;
+    internal readonly uint MAX_DURATION_SECONDS = (uint)new TimeSpan(7, 0, 0, 0).TotalSeconds;
+    internal readonly uint MIN_DURATION_SECONDS = 15;
 
     internal Uri STSEndpoint { get; set; }
     internal Func<JsonWebToken> JWTSupplier { get; set; }
 
     internal uint GetDurationInSeconds(uint expiry)
     {
-        if (DurationInSeconds != null && DurationInSeconds.Value > 0) expiry = DurationInSeconds.Value;
+        if (DurationInSeconds is not null && DurationInSeconds.Value > 0) expiry = DurationInSeconds.Value;
         if (expiry > MAX_DURATION_SECONDS) return MAX_DURATION_SECONDS;
         return expiry < MIN_DURATION_SECONDS ? MIN_DURATION_SECONDS : expiry;
     }
@@ -52,8 +50,8 @@ public abstract class WebIdentityClientGrantsProvider<T> : AssumeRoleBaseProvide
     {
         Validate();
         var jwt = JWTSupplier();
-        var requestMessageBuilder = await base.BuildRequest();
-        requestMessageBuilder = utils.GetEmptyRestRequest(requestMessageBuilder);
+        var requestMessageBuilder = await base.BuildRequest().ConfigureAwait(false);
+        requestMessageBuilder = Utils.GetEmptyRestRequest(requestMessageBuilder);
         requestMessageBuilder.AddQueryParameter("WebIdentityToken", jwt.AccessToken);
         await Task.Yield();
         return requestMessageBuilder;
@@ -65,20 +63,20 @@ public abstract class WebIdentityClientGrantsProvider<T> : AssumeRoleBaseProvide
         // Stream receiveStream = response.Content.ReadAsStreamAsync();
         // StreamReader readStream = new StreamReader (receiveStream, Encoding.UTF8);
         // txtBlock.Text = readStream.ReadToEnd();
-        if (string.IsNullOrWhiteSpace(Convert.ToString(response.Content)) ||
-            !HttpStatusCode.OK.Equals(response.StatusCode))
-            throw new ArgumentNullException("Unable to get credentials. Response error.");
-        using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(Convert.ToString(response.Content))))
-        {
-            return (AccessCredentials)new XmlSerializer(typeof(AccessCredentials)).Deserialize(stream);
-        }
+        var content = Convert.ToString(response.Content, CultureInfo.InvariantCulture);
+        if (string.IsNullOrWhiteSpace(content) ||
+            HttpStatusCode.OK != response.StatusCode)
+            throw new ArgumentNullException(nameof(response), "Unable to get credentials. Response error.");
+
+        using var stream = Encoding.UTF8.GetBytes(content).AsMemory().AsStream();
+        return Utils.DeserializeXml<AccessCredentials>(stream);
     }
 
     protected void Validate()
     {
-        if (JWTSupplier == null)
-            throw new ArgumentNullException(nameof(JWTSupplier) + " JWT Token supplier cannot be null.");
-        if (STSEndpoint == null || string.IsNullOrWhiteSpace(STSEndpoint.AbsoluteUri))
+        if (JWTSupplier is null)
+            throw new InvalidOperationException(nameof(JWTSupplier) + " JWT Token supplier cannot be null.");
+        if (STSEndpoint is null || string.IsNullOrWhiteSpace(STSEndpoint.AbsoluteUri))
             throw new InvalidOperationException(nameof(STSEndpoint) + " value is invalid.");
     }
 }

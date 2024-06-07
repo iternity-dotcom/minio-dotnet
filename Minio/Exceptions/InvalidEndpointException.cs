@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 
+using Minio.DataModel.Result;
+
 namespace Minio.Exceptions;
 
+[Serializable]
 public class InvalidEndpointException : MinioException
 {
     private readonly string endpoint;
@@ -26,6 +29,22 @@ public class InvalidEndpointException : MinioException
     }
 
     public InvalidEndpointException(string message) : base(message)
+    {
+    }
+
+    public InvalidEndpointException(ResponseResult serverResponse) : base(serverResponse)
+    {
+    }
+
+    public InvalidEndpointException(string message, ResponseResult serverResponse) : base(message, serverResponse)
+    {
+    }
+
+    public InvalidEndpointException()
+    {
+    }
+
+    public InvalidEndpointException(string message, Exception innerException) : base(message, innerException)
     {
     }
 

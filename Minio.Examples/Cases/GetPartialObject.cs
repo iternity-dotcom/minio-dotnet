@@ -14,17 +14,15 @@
  * limitations under the License.
  */
 
-using System;
-using System.IO;
-using System.Threading.Tasks;
+using Minio.DataModel.Args;
 
 namespace Minio.Examples.Cases;
 
-internal class GetPartialObject
+internal static class GetPartialObject
 {
     // Get object in a bucket for a particular offset range. Dotnet SDK currently
     // requires both start offset and end 
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         string objectName = "my-object-name",
         string fileName = "my-file-name")
@@ -37,18 +35,18 @@ internal class GetPartialObject
             var statObjectArgs = new StatObjectArgs()
                 .WithBucket(bucketName)
                 .WithObject(objectName);
-            await minio.StatObjectAsync(statObjectArgs);
+            _ = await minio.StatObjectAsync(statObjectArgs).ConfigureAwait(false);
 
             // Get object content starting at byte position 1024 and length of 4096
             var getObjectArgs = new GetObjectArgs()
                 .WithBucket(bucketName)
                 .WithObject(objectName)
                 .WithOffsetAndLength(1024L, 4096L)
-                .WithCallbackStream(stream =>
+                .WithCallbackStream(async (stream, cancellationToken) =>
                 {
                     var fileStream = File.Create(fileName);
-                    stream.CopyTo(fileStream);
-                    fileStream.Dispose();
+                    await stream.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+                    await fileStream.DisposeAsync().ConfigureAwait(false);
                     var writtenInfo = new FileInfo(fileName);
                     var file_read_size = writtenInfo.Length;
                     // Uncomment to print the file on output console
@@ -57,7 +55,7 @@ internal class GetPartialObject
                         $"Successfully downloaded object with requested offset and length {writtenInfo.Length} into file");
                     stream.Dispose();
                 });
-            await minio.GetObjectAsync(getObjectArgs).ConfigureAwait(false);
+            _ = await minio.GetObjectAsync(getObjectArgs).ConfigureAwait(false);
             Console.WriteLine();
         }
         catch (Exception e)

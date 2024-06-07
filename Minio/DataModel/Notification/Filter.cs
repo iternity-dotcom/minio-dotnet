@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-using System;
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Notification;
 
 // Filter - a tag in the notification xml structure which carries
 // suffix/prefix filters

@@ -14,24 +14,33 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.Threading.Tasks;
+using Minio.DataModel.Args;
 using Minio.DataModel.Replication;
 
 namespace Minio.Examples.Cases;
 
-public class SetBucketReplication
+public static class SetBucketReplication
 {
     private static string Bash(string cmd)
     {
         var escapedArgs = "";
         foreach (var str in new List<string>
                  {
-                     "$", "(", ")", "{", "}",
-                     "[", "]", "@", "#", "$",
-                     "%", "&", "+"
+                     "$",
+                     "(",
+                     ")",
+                     "{",
+                     "}",
+                     "[",
+                     "]",
+                     "@",
+                     "#",
+                     "$",
+                     "%",
+                     "&",
+                     "+"
                  })
             escapedArgs = cmd.Replace("str", "\\str");
 
@@ -41,7 +50,7 @@ public class SetBucketReplication
                         "UseShellExecute = false" +
                         "CreateNoWindow = true";
         var startInfo = new ProcessStartInfo(fileName, arguments);
-        var process = Process.Start(startInfo);
+        using var process = Process.Start(startInfo);
 
         var result = process.StandardOutput.ReadToEnd();
         process.WaitForExit();
@@ -50,32 +59,32 @@ public class SetBucketReplication
     }
 
     // Set Replication configuration for the bucket
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         string destBucketName = "dest-bucket-name",
         string replicationRuleID = "my-replication-ID")
     {
+        if (minio is null) throw new ArgumentNullException(nameof(minio));
+
         var setArgs = new SetVersioningArgs()
             .WithBucket(bucketName)
             .WithVersioningEnabled();
-        await minio.SetVersioningAsync(setArgs);
+        await minio.SetVersioningAsync(setArgs).ConfigureAwait(false);
         setArgs = new SetVersioningArgs()
             .WithBucket(destBucketName)
             .WithVersioningEnabled();
-        await minio.SetVersioningAsync(setArgs);
-
-        var serverEndPoint = "";
+        await minio.SetVersioningAsync(setArgs).ConfigureAwait(false);
         var schema = "http://";
-        var accessKey = "";
-        var secretKey = "";
-
-        if (Environment.GetEnvironmentVariable("SERVER_ENDPOINT") != null)
+        string serverEndPoint;
+        string accessKey;
+        string secretKey;
+        if (Environment.GetEnvironmentVariable("SERVER_ENDPOINT") is not null)
         {
             serverEndPoint = Environment.GetEnvironmentVariable("SERVER_ENDPOINT");
             accessKey = Environment.GetEnvironmentVariable("ACCESS_KEY");
             secretKey = Environment.GetEnvironmentVariable("SECRET_KEY");
-            if (Environment.GetEnvironmentVariable("ENABLE_HTTPS") != null)
-                if (Environment.GetEnvironmentVariable("ENABLE_HTTPS").Equals("1"))
+            if (Environment.GetEnvironmentVariable("ENABLE_HTTPS") is not null)
+                if (Environment.GetEnvironmentVariable("ENABLE_HTTPS").Equals("1", StringComparison.OrdinalIgnoreCase))
                     schema = "https://";
         }
         else
@@ -115,14 +124,13 @@ public class SetBucketReplication
                     SseKmsEncryptedObjects.StatusEnabled)),
                 ReplicationRule.StatusEnabled
             );
-        var rules = new List<ReplicationRule>();
-        rules.Add(rule);
+        var rules = new Collection<ReplicationRule> { rule };
         var repl = new ReplicationConfiguration(arn, rules);
 
         await minio.SetBucketReplicationAsync(
             new SetBucketReplicationArgs()
                 .WithBucket(bucketName)
                 .WithConfiguration(repl)
-        );
+        ).ConfigureAwait(false);
     }
 }

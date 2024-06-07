@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2021 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Xml.Serialization;
 using Minio.DataModel.Tags;
 
@@ -39,23 +38,27 @@ public class AndOperator
 
     public AndOperator(string prefix, Tagging tagObj)
     {
+        if (tagObj is null) throw new ArgumentNullException(nameof(tagObj));
+
         Prefix = prefix;
-        Tags = new List<Tag>(tagObj.TaggingSet.Tag);
+        Tags = new Collection<Tag>(tagObj.TaggingSet.Tag);
     }
 
-    public AndOperator(string prefix, List<Tag> tag)
+    public AndOperator(string prefix, ICollection<Tag> tag)
     {
         Prefix = prefix;
         Tags = tag;
     }
 
-    public AndOperator(string prefix, Dictionary<string, string> tags)
+    public AndOperator(string prefix, IDictionary<string, string> tags)
     {
+        if (tags is null) throw new ArgumentNullException(nameof(tags));
+
         Prefix = prefix;
         foreach (var item in tags) Tags.Add(new Tag(item.Key, item.Value));
     }
 
     [XmlElement("Prefix")] internal string Prefix { get; set; }
 
-    [XmlElement("Tag")] public List<Tag> Tags { get; set; }
+    [XmlElement("Tag")] public ICollection<Tag> Tags { get; set; }
 }

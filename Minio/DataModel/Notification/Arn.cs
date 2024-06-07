@@ -16,7 +16,7 @@
 
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Notification;
 
 /// <summary>
 ///     Arn holds ARN information that will be sent to the web service,
@@ -36,6 +36,9 @@ public class Arn
     /// <param name="arnString"></param>
     public Arn(string arnString)
     {
+        if (string.IsNullOrEmpty(arnString))
+            throw new ArgumentException($"'{nameof(arnString)}' cannot be null or empty.", nameof(arnString));
+
         var parts = arnString.Split(':');
         if (parts.Length == 6)
         {

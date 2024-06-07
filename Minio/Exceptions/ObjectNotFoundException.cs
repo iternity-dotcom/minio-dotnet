@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 
+using Minio.DataModel.Result;
+
 namespace Minio.Exceptions;
 
+[Serializable]
 public class ObjectNotFoundException : MinioException
 {
     private readonly string objectName;
@@ -23,6 +26,26 @@ public class ObjectNotFoundException : MinioException
     public ObjectNotFoundException(string objectName, string message) : base(message)
     {
         this.objectName = objectName;
+    }
+
+    public ObjectNotFoundException(ResponseResult serverResponse) : base(serverResponse)
+    {
+    }
+
+    public ObjectNotFoundException(string message) : base(message)
+    {
+    }
+
+    public ObjectNotFoundException(string message, ResponseResult serverResponse) : base(message, serverResponse)
+    {
+    }
+
+    public ObjectNotFoundException()
+    {
+    }
+
+    public ObjectNotFoundException(string message, Exception innerException) : base(message, innerException)
+    {
     }
 
     public override string ToString()

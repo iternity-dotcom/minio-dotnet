@@ -15,20 +15,19 @@
  * limitations under the License.
  */
 
-using System;
-using System.Threading.Tasks;
 using Minio.Credentials;
+using Minio.DataModel.Args;
 using Minio.Exceptions;
 
 namespace Minio.Examples.Cases;
 
-public class AWSEnvironmentProviderExample
+public static class AWSEnvironmentProviderExample
 {
     // Establish Credentials with AWS IAM Credentials in Environmental variables
     public static async Task Run()
     {
         var provider = new AWSEnvironmentProvider();
-        var minioClient = new MinioClient()
+        using var minioClient = new MinioClient()
             .WithEndpoint("s3.amazonaws.com")
             .WithSSL()
             .WithCredentialsProvider(provider)
@@ -38,16 +37,16 @@ public class AWSEnvironmentProviderExample
             var statObjectArgs = new StatObjectArgs()
                 .WithBucket("my-bucket-name")
                 .WithObject("my-object-name");
-            var result = await minioClient.StatObjectAsync(statObjectArgs);
+            var result = await minioClient.StatObjectAsync(statObjectArgs).ConfigureAwait(false);
             Console.WriteLine("Object Stat: \n" + result);
         }
         catch (MinioException me)
         {
-            Console.WriteLine($"[Bucket] IAMAWSProviderExample example case encountered Exception: {me}");
+            Console.WriteLine($"[Bucket] AWSEnvironmentProviderExample example case encountered MinioException: {me}");
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[Bucket] IAMAWSProviderExample example case encountered Exception: {e}");
+            Console.WriteLine($"[Bucket] AWSEnvironmentProviderExample example case encountered Exception: {e}");
         }
     }
 }

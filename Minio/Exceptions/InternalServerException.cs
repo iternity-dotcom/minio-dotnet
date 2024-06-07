@@ -14,11 +14,30 @@
  * limitations under the License.
  */
 
+using Minio.DataModel.Result;
+
 namespace Minio.Exceptions;
 
+[Serializable]
 public class InternalServerException : MinioException
 {
     public InternalServerException(string message) : base(message)
+    {
+    }
+
+    public InternalServerException(ResponseResult serverResponse) : base(serverResponse)
+    {
+    }
+
+    public InternalServerException(string message, ResponseResult serverResponse) : base(message, serverResponse)
+    {
+    }
+
+    public InternalServerException()
+    {
+    }
+
+    public InternalServerException(string message, Exception innerException) : base(message, innerException)
     {
     }
 }

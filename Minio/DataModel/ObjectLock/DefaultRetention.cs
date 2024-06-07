@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-using System;
 using System.Xml.Serialization;
 
 namespace Minio.DataModel.ObjectLock;
@@ -27,7 +26,7 @@ public class DefaultRetention
     {
     }
 
-    public DefaultRetention(int days, RetentionMode mode)
+    public DefaultRetention(int days, ObjectRetentionMode mode)
     {
         Days = days;
         Mode = mode;
@@ -35,5 +34,5 @@ public class DefaultRetention
 
     [XmlElement("Days")] public int Days { get; set; }
 
-    [XmlElement("Mode")] public RetentionMode Mode { get; set; }
+    [XmlElement("Mode")] public ObjectRetentionMode Mode { get; set; }
 }

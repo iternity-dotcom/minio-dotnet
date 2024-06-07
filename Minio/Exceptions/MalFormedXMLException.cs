@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage,
  * (C) 2017, 2018, 2019, 2020 MinIO, Inc.
  *
@@ -15,12 +15,10 @@
  * limitations under the License.
  */
 
-using System;
-
 namespace Minio.Exceptions;
 
 [Serializable]
-internal class MalFormedXMLException : Exception
+public class MalFormedXMLException : Exception
 {
     internal string bucketName;
     internal string key;

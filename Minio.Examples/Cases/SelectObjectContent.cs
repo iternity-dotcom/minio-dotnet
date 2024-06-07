@@ -14,44 +14,43 @@
  * limitations under the License.
  */
 
-using System;
-using System.IO;
 using System.Text;
-using System.Threading.Tasks;
-using Minio.DataModel;
+using CommunityToolkit.HighPerformance;
+using Minio.DataModel.Args;
+using Minio.DataModel.Select;
 
 namespace Minio.Examples.Cases;
 
-internal class SelectObjectContent
+internal static class SelectObjectContent
 {
     // Get object in a bucket
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         string objectName = "my-object-name",
         string fileName = "my-file-name")
     {
+        if (minio is null) throw new ArgumentNullException(nameof(minio));
+
         var newObjectName = "new" + objectName;
         try
         {
             Console.WriteLine("Running example for API: SelectObjectContentAsync");
 
             var csvString = new StringBuilder();
-            csvString.AppendLine("Employee,Manager,Group");
-            csvString.AppendLine("Employee4,Employee2,500");
-            csvString.AppendLine("Employee3,Employee1,500");
-            csvString.AppendLine("Employee1,,1000");
-            csvString.AppendLine("Employee5,Employee1,500");
-            csvString.AppendLine("Employee2,Employee1,800");
-            var csvBytes = Encoding.UTF8.GetBytes(csvString.ToString());
-            using (var stream = new MemoryStream(csvBytes))
-            {
-                var putObjectArgs = new PutObjectArgs()
-                    .WithBucket(bucketName)
-                    .WithObject(newObjectName)
-                    .WithStreamData(stream)
-                    .WithObjectSize(stream.Length);
-                await minio.PutObjectAsync(putObjectArgs);
-            }
+            _ = csvString.AppendLine("Employee,Manager,Group");
+            _ = csvString.AppendLine("Employee4,Employee2,500");
+            _ = csvString.AppendLine("Employee3,Employee1,500");
+            _ = csvString.AppendLine("Employee1,,1000");
+            _ = csvString.AppendLine("Employee5,Employee1,500");
+            _ = csvString.AppendLine("Employee2,Employee1,800");
+            ReadOnlyMemory<byte> csvBytes = Encoding.UTF8.GetBytes(csvString.ToString());
+            using var stream = csvBytes.AsStream();
+            var putObjectArgs = new PutObjectArgs()
+                .WithBucket(bucketName)
+                .WithObject(newObjectName)
+                .WithStreamData(stream)
+                .WithObjectSize(stream.Length);
+            _ = await minio.PutObjectAsync(putObjectArgs).ConfigureAwait(false);
 
             var queryType = QueryExpressionType.SQL;
             var queryExpr = "select count(*) from s3object";
@@ -60,18 +59,12 @@ internal class SelectObjectContent
                 CompressionType = SelectCompressionType.NONE,
                 CSV = new CSVInputOptions
                 {
-                    FileHeaderInfo = CSVFileHeaderInfo.None,
-                    RecordDelimiter = "\n",
-                    FieldDelimiter = ","
+                    FileHeaderInfo = CSVFileHeaderInfo.None, RecordDelimiter = "\n", FieldDelimiter = ","
                 }
             };
             var outputSerialization = new SelectObjectOutputSerialization
             {
-                CSV = new CSVOutputOptions
-                {
-                    RecordDelimiter = "\n",
-                    FieldDelimiter = ","
-                }
+                CSV = new CSVOutputOptions { RecordDelimiter = "\n", FieldDelimiter = "," }
             };
             var args = new SelectObjectContentArgs()
                 .WithBucket(bucketName)
@@ -80,12 +73,13 @@ internal class SelectObjectContent
                 .WithQueryExpression(queryExpr)
                 .WithInputSerialization(inputSerialization)
                 .WithOutputSerialization(outputSerialization);
-            var resp = await minio.SelectObjectContentAsync(args);
-            resp.Payload.CopyTo(Console.OpenStandardOutput());
+            var resp = await minio.SelectObjectContentAsync(args).ConfigureAwait(false);
+            using var standardOutput = Console.OpenStandardOutput();
+            await resp.Payload.CopyToAsync(standardOutput).ConfigureAwait(false);
             Console.WriteLine("Bytes scanned:" + resp.Stats.BytesScanned);
             Console.WriteLine("Bytes returned:" + resp.Stats.BytesReturned);
             Console.WriteLine("Bytes processed:" + resp.Stats.BytesProcessed);
-            if (resp.Progress != null) Console.WriteLine("Progress :" + resp.Progress.BytesProcessed);
+            if (resp.Progress is not null) Console.WriteLine("Progress :" + resp.Progress.BytesProcessed);
         }
         catch (Exception e)
         {

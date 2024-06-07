@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-using System;
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Notification;
 
 /// <summary>
 ///     FilterRule - child of S3Key, a tag in the notification xml which
@@ -44,11 +43,11 @@ public class FilterRule
 
     public bool ShouldSerializeName()
     {
-        return Name != null;
+        return Name is not null;
     }
 
     public bool ShouldSerializeValue()
     {
-        return Value != null;
+        return Value is not null;
     }
 }

@@ -14,16 +14,14 @@
  * limitations under the License.
  */
 
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using Minio.DataModel.Args;
 
 namespace Minio.Examples.Cases;
 
-internal class RemoveObjects
+internal static class RemoveObjects
 {
     // Remove a list of objects from a bucket
-    public static async Task Run(MinioClient minio,
+    public static async Task Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         List<string> objectsList = null,
         List<Tuple<string, string>> objectsVersionsList = null)
@@ -31,28 +29,40 @@ internal class RemoveObjects
         try
         {
             Console.WriteLine("Running example for API: RemoveObjectsAsync");
-            if (objectsList != null)
+            if (objectsList is not null)
             {
-                var objArgs = new RemoveObjectsArgs()
-                    .WithBucket(bucketName)
-                    .WithObjects(objectsList);
-                var objectsOservable = await minio.RemoveObjectsAsync(objArgs).ConfigureAwait(false);
-                var objectsSubscription = objectsOservable.Subscribe(
-                    objDeleteError => Console.WriteLine($"Object: {objDeleteError.Key}"),
-                    ex => Console.WriteLine($"OnError: {ex}"),
-                    () => { Console.WriteLine($"Removed objects in list from {bucketName}\n"); });
+                try
+                {
+                    var objArgs = new RemoveObjectsArgs()
+                        .WithBucket(bucketName)
+                        .WithObjects(objectsList);
+                    foreach (var objDeleteError in await minio.RemoveObjectsAsync(objArgs).ConfigureAwait(false))
+                        Console.WriteLine($"Object: {objDeleteError.Key}");
+                }
+                catch (Exception exc)
+                {
+                    Console.WriteLine($"OnError: {exc}");
+                }
+
+                Console.WriteLine($"Removed objects in list from {bucketName}\n");
                 return;
             }
 
-            var objVersionsArgs = new RemoveObjectsArgs()
-                .WithBucket(bucketName)
-                .WithObjectsVersions(objectsVersionsList);
-            var observable = await minio.RemoveObjectsAsync(objVersionsArgs).ConfigureAwait(false);
-            var subscription = observable.Subscribe(
-                objVerDeleteError => Console.WriteLine($"Object: {objVerDeleteError.Key} " +
-                                                       $"Object Version: {objVerDeleteError.VersionId}"),
-                ex => Console.WriteLine($"OnError: {ex}"),
-                () => { Console.WriteLine($"Removed objects versions from {bucketName}\n"); });
+            try
+            {
+                var objVersionsArgs = new RemoveObjectsArgs()
+                    .WithBucket(bucketName)
+                    .WithObjectsVersions(objectsVersionsList);
+                foreach (var objVerDeleteError in await minio.RemoveObjectsAsync(objVersionsArgs).ConfigureAwait(false))
+                    Console.WriteLine($"Object: {objVerDeleteError.Key} " +
+                                      $"Object Version: {objVerDeleteError.VersionId}");
+            }
+            catch (Exception exc)
+            {
+                Console.WriteLine($"OnError: {exc}");
+            }
+
+            Console.WriteLine($"Removed objects versions from {bucketName}\n");
         }
         catch (Exception e)
         {

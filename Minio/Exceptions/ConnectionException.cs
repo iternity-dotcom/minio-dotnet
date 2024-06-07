@@ -15,12 +15,30 @@
  * limitations under the License.
  */
 
+using Minio.DataModel.Result;
 
 namespace Minio.Exceptions;
 
+[Serializable]
 public class ConnectionException : MinioException
 {
     public ConnectionException(string message, ResponseResult response) : base(message, response)
+    {
+    }
+
+    public ConnectionException(ResponseResult serverResponse) : base(serverResponse)
+    {
+    }
+
+    public ConnectionException(string message) : base(message)
+    {
+    }
+
+    public ConnectionException()
+    {
+    }
+
+    public ConnectionException(string message, Exception innerException) : base(message, innerException)
     {
     }
 }

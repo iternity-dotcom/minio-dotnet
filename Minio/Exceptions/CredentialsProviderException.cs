@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2021 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,19 +14,42 @@
  * limitations under the License.
  */
 
+using Minio.DataModel.Result;
+
 namespace Minio.Exceptions;
 
+[Serializable]
 public class CredentialsProviderException : MinioException
 {
-    private readonly string CredentialProviderType;
+    private readonly string credentialProviderType;
 
     public CredentialsProviderException(string credentialProviderType, string message) : base(message)
     {
-        CredentialProviderType = credentialProviderType;
+        this.credentialProviderType = credentialProviderType;
+    }
+
+    public CredentialsProviderException(ResponseResult serverResponse) : base(serverResponse)
+    {
+    }
+
+    public CredentialsProviderException(string message) : base(message)
+    {
+    }
+
+    public CredentialsProviderException(string message, ResponseResult serverResponse) : base(message, serverResponse)
+    {
+    }
+
+    public CredentialsProviderException()
+    {
+    }
+
+    public CredentialsProviderException(string message, Exception innerException) : base(message, innerException)
+    {
     }
 
     public override string ToString()
     {
-        return $"{CredentialProviderType}: {base.ToString()}";
+        return $"{credentialProviderType}: {base.ToString()}";
     }
 }

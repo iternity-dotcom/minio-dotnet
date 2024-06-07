@@ -1,27 +1,23 @@
-/*
-* MinIO .NET Library for Amazon S3 Compatible Cloud Storage,
-* (C) 2017, 2018, 2019, 2020 MinIO, Inc.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+﻿/*
+ * MinIO .NET Library for Amazon S3 Compatible Cloud Storage,
+ * (C) 2017, 2018, 2019, 2020 MinIO, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
-using System.Web;
 using Minio.Exceptions;
 
 namespace Minio;
@@ -55,7 +51,7 @@ internal class HttpRequestMessageBuilder
     }
 
     public Uri RequestUri { get; set; }
-    public Action<Stream> ResponseWriter { get; set; }
+    public Func<Stream, CancellationToken, Task> ResponseWriter { get; set; }
     public HttpMethod Method { get; }
 
     public HttpRequestMessage Request
@@ -63,29 +59,20 @@ internal class HttpRequestMessageBuilder
         get
         {
             var requestUriBuilder = new UriBuilder(RequestUri);
-
-            foreach (var queryParameter in QueryParameters)
-            {
-                var query = HttpUtility.ParseQueryString(requestUriBuilder.Query);
-                requestUriBuilder.Query = query.ToString();
-            }
-
             var requestUri = requestUriBuilder.Uri;
             var request = new HttpRequestMessage(Method, requestUri);
 
-            if (Content != null) request.Content = new ByteArrayContent(Content);
+            if (!Content.IsEmpty) request.Content = new ReadOnlyMemoryContent(Content);
 
             foreach (var parameter in HeaderParameters)
             {
-                var key = parameter.Key.ToLower();
+                var key = parameter.Key.ToLowerInvariant();
                 var val = parameter.Value;
-
 
                 var addSuccess = request.Headers.TryAddWithoutValidation(key, val);
                 if (!addSuccess)
                 {
-                    if (request.Content == null)
-                        request.Content = new StringContent("");
+                    request.Content ??= new StringContent("");
                     switch (key)
                     {
                         case "content-type":
@@ -99,12 +86,15 @@ internal class HttpRequestMessageBuilder
                             }
 
                             break;
+
                         case "content-length":
-                            request.Content.Headers.ContentLength = Convert.ToInt32(val);
+                            request.Content.Headers.ContentLength = Convert.ToInt32(val, CultureInfo.InvariantCulture);
                             break;
+
                         case "content-md5":
                             request.Content.Headers.ContentMD5 = Convert.FromBase64String(val);
                             break;
+
                         default:
                             var errMessage = "Unsupported signed header: (" + key + ": " + val;
                             throw new UnexpectedMinioException(errMessage);
@@ -112,18 +102,16 @@ internal class HttpRequestMessageBuilder
                 }
             }
 
-            if (request.Content != null)
+            if (request.Content is not null)
             {
                 var isMultiDeleteRequest = false;
                 if (Method == HttpMethod.Post) isMultiDeleteRequest = QueryParameters.ContainsKey("delete");
                 var isSecure = RequestUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase);
 
                 if (!isSecure && !isMultiDeleteRequest &&
-                    BodyParameters.ContainsKey("Content-Md5") &&
-                    BodyParameters["Content-Md5"] != null)
+                    BodyParameters.TryGetValue("Content-Md5", out var value) && value is not null)
                 {
-                    var returnValue = "";
-                    BodyParameters.TryGetValue("Content-Md5", out returnValue);
+                    _ = BodyParameters.TryGetValue("Content-Md5", out var returnValue);
                     request.Content.Headers.ContentMD5 = Convert.FromBase64String(returnValue);
                 }
             }
@@ -138,24 +126,24 @@ internal class HttpRequestMessageBuilder
 
     public Dictionary<string, string> BodyParameters { get; }
 
-    public byte[] Content { get; private set; }
+    public ReadOnlyMemory<byte> Content { get; private set; }
 
     public string ContentTypeKey => "Content-Type";
 
     public void AddHeaderParameter(string key, string value)
     {
-        var comparison = StringComparison.InvariantCultureIgnoreCase;
-        if (key.StartsWith("content-", comparison) &&
+        if (key.StartsWith("content-", StringComparison.InvariantCultureIgnoreCase) &&
             !string.IsNullOrEmpty(value) &&
             !BodyParameters.ContainsKey(key))
             BodyParameters.Add(key, value);
+
         HeaderParameters[key] = value;
     }
 
     public void AddOrUpdateHeaderParameter(string key, string value)
     {
-        if (HeaderParameters.GetType().GetProperty(key) != null)
-            HeaderParameters.Remove(key);
+        if (HeaderParameters.GetType().GetProperty(key) is not null)
+            _ = HeaderParameters.Remove(key);
         HeaderParameters[key] = value;
     }
 
@@ -169,7 +157,7 @@ internal class HttpRequestMessageBuilder
         QueryParameters[key] = value;
     }
 
-    public void SetBody(byte[] body)
+    public void SetBody(ReadOnlyMemory<byte> body)
     {
         Content = body;
     }

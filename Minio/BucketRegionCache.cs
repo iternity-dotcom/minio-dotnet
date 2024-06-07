@@ -14,12 +14,10 @@
  * limitations under the License.
  */
 
-using System;
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.Http;
-using System.Threading.Tasks;
 using System.Xml.Linq;
+using Minio.Helper;
 
 namespace Minio;
 
@@ -34,7 +32,7 @@ public sealed class BucketRegionCache
 
     private BucketRegionCache()
     {
-        regionMap = new ConcurrentDictionary<string, string>();
+        regionMap = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
     }
 
     public static BucketRegionCache Instance => lazy.Value;
@@ -46,7 +44,7 @@ public sealed class BucketRegionCache
     /// <returns></returns>
     public string Region(string bucketName)
     {
-        regionMap.TryGetValue(bucketName, out var value);
+        _ = regionMap.TryGetValue(bucketName, out var value);
         return value ?? "us-east-1";
     }
 
@@ -57,7 +55,7 @@ public sealed class BucketRegionCache
     /// <param name="region"></param>
     public void Add(string bucketName, string region)
     {
-        regionMap.TryAdd(bucketName, region);
+        _ = regionMap.TryAdd(bucketName, region);
     }
 
     /// <summary>
@@ -66,7 +64,7 @@ public sealed class BucketRegionCache
     /// <param name="bucketName"></param>
     public void Remove(string bucketName)
     {
-        regionMap.TryRemove(bucketName, out var value);
+        _ = regionMap.TryRemove(bucketName, out _);
     }
 
     /// <summary>
@@ -76,8 +74,8 @@ public sealed class BucketRegionCache
     /// <returns></returns>
     public bool Exists(string bucketName)
     {
-        regionMap.TryGetValue(bucketName, out var value);
-        return value != null;
+        _ = regionMap.TryGetValue(bucketName, out var value);
+        return !string.Equals(value, null, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -85,24 +83,24 @@ public sealed class BucketRegionCache
     /// </summary>
     /// <param name="client"></param>
     /// <param name="bucketName"></param>
-    internal async Task<string> Update(MinioClient client, string bucketName)
+    internal static async Task<string> Update(IMinioClient client, string bucketName)
     {
         string region = null;
 
-        if (bucketName != null && client.AccessKey != null
-                               && client.SecretKey != null && !Instance.Exists(bucketName))
+        if (!string.Equals(bucketName, null, StringComparison.OrdinalIgnoreCase) && client.Config.AccessKey is not null
+            && client.Config.SecretKey is not null && !Instance.Exists(bucketName))
         {
             string location = null;
-            var path = utils.UrlEncode(bucketName);
+            var path = Utils.UrlEncode(bucketName);
             // Initialize client
-            var requestUrl = RequestUtil.MakeTargetURL(client.BaseUrl, client.Secure);
+            var requestUrl = RequestUtil.MakeTargetURL(client.Config.BaseUrl, client.Config.Secure);
 
             var requestBuilder = new HttpRequestMessageBuilder(HttpMethod.Get, requestUrl, path);
             requestBuilder.AddQueryParameter("location", "");
             using var response =
-                await client.ExecuteTaskAsync(client.NoErrorHandlers, requestBuilder).ConfigureAwait(false);
+                await client.ExecuteTaskAsync(client.ResponseErrorHandlers, requestBuilder).ConfigureAwait(false);
 
-            if (response != null && HttpStatusCode.OK.Equals(response.StatusCode))
+            if (response is not null && HttpStatusCode.OK == response.StatusCode)
             {
                 var root = XDocument.Parse(response.Content);
                 location = root.Root.Value;
@@ -115,7 +113,7 @@ public sealed class BucketRegionCache
             else
             {
                 // eu-west-1 can be sometimes 'EU'.
-                if (location == "EU")
+                if (string.Equals(location, "EU", StringComparison.OrdinalIgnoreCase))
                     region = "eu-west-1";
                 else
                     region = location;

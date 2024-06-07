@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-using System;
+using Minio.DataModel.Result;
 
 namespace Minio.Exceptions;
 
@@ -23,6 +23,22 @@ namespace Minio.Exceptions;
 public class AccessDeniedException : MinioException
 {
     public AccessDeniedException(string message) : base(message)
+    {
+    }
+
+    public AccessDeniedException(ResponseResult serverResponse) : base(serverResponse)
+    {
+    }
+
+    public AccessDeniedException(string message, ResponseResult serverResponse) : base(message, serverResponse)
+    {
+    }
+
+    public AccessDeniedException()
+    {
+    }
+
+    public AccessDeniedException(string message, Exception innerException) : base(message, innerException)
     {
     }
 }

@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-using System;
 using System.Xml.Serialization;
 
 namespace Minio.DataModel.ObjectLock;
@@ -28,7 +27,7 @@ public class ObjectLockRule
         DefaultRetention = null;
     }
 
-    public ObjectLockRule(RetentionMode mode, int retentionDurationDays)
+    public ObjectLockRule(ObjectRetentionMode mode, int retentionDurationDays)
     {
         DefaultRetention = new DefaultRetention(retentionDurationDays, mode);
     }
