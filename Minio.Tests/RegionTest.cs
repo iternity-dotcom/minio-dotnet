@@ -15,11 +15,12 @@
  */
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Minio.Helper;
 
 namespace Minio.Tests;
 
 [TestClass]
-public class TestRegion
+public class RegionTest
 {
     [DataTestMethod]
     [DataRow("s3.us-east-2.amazonaws.com", "us-east-2")]
@@ -37,6 +38,6 @@ public class TestRegion
     [DataRow("localhost:9000", "")]
     public void TestGetRegion(string endpoint, string expectedRegion)
     {
-        Assert.AreEqual(expectedRegion, Regions.GetRegionFromEndpoint(endpoint));
+        Assert.AreEqual(expectedRegion, RegionHelper.GetRegionFromEndpoint(endpoint));
     }
 }

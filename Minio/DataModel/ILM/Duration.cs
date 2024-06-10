@@ -16,21 +16,21 @@
 
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.ILM;
 
 [Serializable]
 public abstract class Duration
 {
     protected Duration()
     {
-        Date = null;
+        ExpiryDate = null;
         Days = null;
     }
 
     protected Duration(DateTime date)
     {
-        date = new DateTime(date.Year, date.Month, date.Day, 0, 0, 0);
-        Date = Utils.To8601String(date);
+        ExpiryDate = date.ToUniversalTime().Date.ToString("o")
+                     ?? date.AddDays(1).AddSeconds(-1).ToUniversalTime().Date.ToString("o");
     }
 
     protected Duration(double days)
@@ -39,7 +39,7 @@ public abstract class Duration
     }
 
     [XmlElement(ElementName = "Date", IsNullable = true)]
-    public string Date { get; set; }
+    public string ExpiryDate { get; set; }
 
     [XmlElement(ElementName = "Days", IsNullable = true)]
     public double? Days { get; set; }

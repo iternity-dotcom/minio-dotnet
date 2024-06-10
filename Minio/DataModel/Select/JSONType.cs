@@ -16,7 +16,7 @@
 
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Select;
 
 [Serializable]
 public sealed class JSONType
@@ -24,8 +24,6 @@ public sealed class JSONType
     // Constants for JSONTypes.
     public static readonly JSONType Document = new("DOCUMENT");
     public static readonly JSONType Lines = new("LINES");
-
-    [XmlText] public string Type;
 
     public JSONType()
     {
@@ -35,4 +33,6 @@ public sealed class JSONType
     {
         Type = value;
     }
+
+    [XmlText] public string Type { get; set; }
 }

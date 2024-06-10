@@ -16,7 +16,7 @@
 
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Notification;
 
 /// <summary>
 ///     TopicConfig carries one single topic notification configuration
@@ -57,6 +57,6 @@ public class TopicConfig : NotificationConfiguration
 
     public override int GetHashCode()
     {
-        return Topic.GetHashCode();
+        return StringComparer.Ordinal.GetHashCode(Topic);
     }
 }

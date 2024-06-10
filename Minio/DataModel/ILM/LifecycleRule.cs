@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2021 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,14 +29,14 @@ namespace Minio.DataModel.ILM;
 [XmlRoot(ElementName = "Rule")]
 public class LifecycleRule
 {
-    public static readonly string LIFECYCLE_RULE_STATUS_ENABLED = "Enabled";
-    public static readonly string LIFECYCLE_RULE_STATUS_DISABLED = "Disabled";
+    public static readonly string LifecycleRuleStatusEnabled = "Enabled";
+    public static readonly string LifecycleRuleStatusDisabled = "Disabled";
 
-    private RuleFilter _ruleFilter;
+    private RuleFilter filter;
 
     public LifecycleRule()
     {
-        _ruleFilter = new RuleFilter();
+        filter = new RuleFilter();
     }
 
     public LifecycleRule(AbortIncompleteMultipartUpload abortIncompleteMultipartUpload, string id,
@@ -48,9 +48,9 @@ public class LifecycleRule
         if (string.IsNullOrEmpty(status))
             throw new ArgumentException($"'{nameof(status)}' cannot be null or empty.", nameof(status));
 
-        if (!status.Equals(LIFECYCLE_RULE_STATUS_ENABLED, StringComparison.Ordinal) &&
-            !status.Equals(LIFECYCLE_RULE_STATUS_DISABLED, StringComparison.Ordinal))
-            throw new ArgumentException("Wrong value assignment for " + nameof(Status));
+        if (!status.Equals(LifecycleRuleStatusEnabled, StringComparison.Ordinal) &&
+            !status.Equals(LifecycleRuleStatusDisabled, StringComparison.Ordinal))
+            throw new ArgumentException("Wrong value assignment", nameof(status));
         AbortIncompleteMultipartUploadObject = abortIncompleteMultipartUpload;
         ID = id;
         Expiration = expiration;
@@ -75,14 +75,14 @@ public class LifecycleRule
     [XmlElement("Filter", IsNullable = true)]
     public RuleFilter Filter
     {
-        get => _ruleFilter;
+        get => filter;
         set
         {
             // The filter must not be missing, even if it is empty.
             if (value is null)
-                _ruleFilter = new RuleFilter();
+                filter = new RuleFilter();
             else
-                _ruleFilter = value;
+                filter = value;
         }
     }
 

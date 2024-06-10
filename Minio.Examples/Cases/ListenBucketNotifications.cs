@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
-using Minio.DataModel;
+using Minio.DataModel.Args;
+using Minio.DataModel.Notification;
 
 namespace Minio.Examples.Cases;
 
 internal static class ListenBucketNotifications
 {
     // Listen for notifications from a specified bucket (a Minio-only extension)
-    public static void Run(MinioClient minio,
+    public static void Run(IMinioClient minio,
         string bucketName = "my-bucket-name",
         List<EventType> events = null,
         string prefix = "",
@@ -41,7 +42,7 @@ internal static class ListenBucketNotifications
             var observable = minio.ListenBucketNotificationsAsync(bucketName, events, prefix, suffix);
 
             var subscription = observable.Subscribe(
-                notification => Console.WriteLine($"Notification: {notification.json}"),
+                notification => Console.WriteLine($"Notification: {notification.Json}"),
                 ex => Console.WriteLine($"OnError: {ex}"),
                 () => Console.WriteLine("Stopped listening for bucket notifications\n"));
 

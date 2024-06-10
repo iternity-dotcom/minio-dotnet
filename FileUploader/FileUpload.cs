@@ -1,22 +1,22 @@
 ﻿/*
-* MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2017-2021 MinIO, Inc.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2017-2021 MinIO, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 using System.Net;
-using System.Runtime.InteropServices;
 using Minio;
+using Minio.DataModel.Args;
 
 namespace FileUploader;
 
@@ -31,7 +31,7 @@ public static class FileUpload
 {
     private static bool IsWindows()
     {
-        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+        return OperatingSystem.IsWindows();
     }
 
     private static async Task Main(string[] args)
@@ -57,7 +57,7 @@ public static class FileUpload
             Console.WriteLine(ex.Message);
         }
 
-        if (IsWindows()) Console.ReadLine();
+        if (IsWindows()) _ = Console.ReadLine();
     }
 
     /// <summary>
@@ -95,7 +95,7 @@ public static class FileUpload
                 .WithObject(objectName)
                 .WithFileName(filePath)
                 .WithContentType(contentType);
-            await minio.PutObjectAsync(putObjectArgs).ConfigureAwait(false);
+            _ = await minio.PutObjectAsync(putObjectArgs).ConfigureAwait(false);
             Console.WriteLine($"\nSuccessfully uploaded {objectName}\n");
         }
         catch (Exception e)
@@ -105,6 +105,6 @@ public static class FileUpload
 
         // Added for Windows folks. Without it, the window, tests
         // run in, dissappears as soon as the test code completes.
-        if (IsWindows()) Console.ReadLine();
+        if (IsWindows()) _ = Console.ReadLine();
     }
 }

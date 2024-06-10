@@ -17,8 +17,9 @@
 using System.Globalization;
 using System.Xml;
 using System.Xml.Serialization;
+using Minio.DataModel.Encryption;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Select;
 
 [Serializable]
 [XmlRoot(ElementName = "SelectObjectContentRequest")]
@@ -42,10 +43,7 @@ public class SelectObjectOptions
 
         try
         {
-            var settings = new XmlWriterSettings
-            {
-                OmitXmlDeclaration = true
-            };
+            var settings = new XmlWriterSettings { OmitXmlDeclaration = true };
             var ns = new XmlSerializerNamespaces();
             ns.Add("", "");
 

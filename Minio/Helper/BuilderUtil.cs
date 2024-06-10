@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2020 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+using System.Globalization;
 using System.Net;
 
 namespace Minio.Helper;
@@ -25,7 +26,7 @@ public static class BuilderUtil
         if (string.IsNullOrEmpty(endpoint))
             throw new ArgumentException($"'{nameof(endpoint)}' cannot be null or empty.", nameof(endpoint));
 
-        return endpoint.Contains(".dualstack.");
+        return endpoint.Contains(".dualstack.", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool IsAwsAccelerateEndpoint(string endpoint)
@@ -85,19 +86,18 @@ public static class BuilderUtil
     private static bool IsValidOctetVal(string val)
     {
         const byte uLimit = 255;
-        return byte.Parse(val) <= uLimit;
+        return byte.Parse(val, NumberStyles.Integer, CultureInfo.InvariantCulture) <= uLimit;
     }
 
     private static bool IsValidIPv4(string ip)
     {
         var posColon = ip.LastIndexOf(':');
-        if (posColon != -1) ip = ip.Substring(0, posColon);
+        if (posColon != -1) ip = ip[..posColon];
         var octetsStr = ip.Split('.');
         if (octetsStr.Length != 4) return false;
         var isValidSmallInt = Array.TrueForAll(octetsStr, IsValidSmallInt);
         if (!isValidSmallInt) return false;
-        var isValidOctet = Array.TrueForAll(octetsStr, IsValidOctetVal);
-        return isValidOctet;
+        return Array.TrueForAll(octetsStr, IsValidOctetVal);
     }
 
     private static bool IsValidIP(string host)
@@ -119,14 +119,15 @@ public static class BuilderUtil
         {
             try
             {
-                var port = int.Parse(host.Substring(posColon + 1, host.Length - posColon - 1));
+                var port = int.Parse(host.Substring(posColon + 1, host.Length - posColon - 1),
+                    CultureInfo.InvariantCulture);
             }
             catch (FormatException)
             {
                 return false;
             }
 
-            host = host.Substring(0, posColon);
+            host = host[..posColon];
         }
 
         // Check host if it is a hostname.

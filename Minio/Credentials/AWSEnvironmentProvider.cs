@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage,
  * (C) 2021 MinIO, Inc.
  *
@@ -19,37 +19,37 @@ using Minio.DataModel;
 
 namespace Minio.Credentials;
 
-public class AWSEnvironmentProvider : EnvironmentProvider
+public class AWSEnvironmentProvider : IClientProvider
 {
-    public override AccessCredentials GetCredentials()
+    internal string AccessKey
     {
-        var credentials = new AccessCredentials(GetAccessKey(), GetSecretKey(), GetSessionToken(), default);
-        return credentials;
+        get
+        {
+            var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID");
+            if (string.IsNullOrWhiteSpace(accessKey)) accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY");
+            return accessKey;
+        }
     }
 
-    public override async Task<AccessCredentials> GetCredentialsAsync()
+    internal string SecretKey
     {
-        var creds = GetCredentials();
-        await Task.Yield();
-        return creds;
+        get
+        {
+            var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY");
+            if (string.IsNullOrWhiteSpace(secretKey)) secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_KEY");
+            return secretKey;
+        }
     }
 
-    internal string GetAccessKey()
+    internal string SessionToken => Environment.GetEnvironmentVariable("AWS_SESSION_TOKEN");
+
+    public AccessCredentials GetCredentials()
     {
-        var accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY_ID");
-        if (string.IsNullOrWhiteSpace(accessKey)) accessKey = Environment.GetEnvironmentVariable("AWS_ACCESS_KEY");
-        return accessKey;
+        return new AccessCredentials(AccessKey, SecretKey, SessionToken, default);
     }
 
-    internal string GetSecretKey()
+    public ValueTask<AccessCredentials> GetCredentialsAsync()
     {
-        var secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_ACCESS_KEY");
-        if (string.IsNullOrWhiteSpace(secretKey)) secretKey = Environment.GetEnvironmentVariable("AWS_SECRET_KEY");
-        return secretKey;
-    }
-
-    internal string GetSessionToken()
-    {
-        return Environment.GetEnvironmentVariable("AWS_SESSION_TOKEN");
+        return new ValueTask<AccessCredentials>(GetCredentials());
     }
 }

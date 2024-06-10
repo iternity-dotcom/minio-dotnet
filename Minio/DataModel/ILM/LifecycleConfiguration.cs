@@ -18,6 +18,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Xml;
 using System.Xml.Serialization;
+using Minio.Helper;
 
 /*
  * Object representation of request XML used in these calls - PutBucketLifecycleConfiguration, GetBucketLifecycleConfiguration.
@@ -38,7 +39,7 @@ public class LifecycleConfiguration
 
     public LifecycleConfiguration(IList<LifecycleRule> rules)
     {
-        if (rules is null || rules.Count <= 0)
+        if (rules is null || rules.Count == 0)
             throw new ArgumentNullException(nameof(rules),
                 "Rules object cannot be empty. A finite set of Lifecycle Rules are needed for LifecycleConfiguration.");
 
@@ -55,10 +56,7 @@ public class LifecycleConfiguration
 
         try
         {
-            var settings = new XmlWriterSettings
-            {
-                OmitXmlDeclaration = true
-            };
+            var settings = new XmlWriterSettings { OmitXmlDeclaration = true };
             var ns = new XmlSerializerNamespaces();
             ns.Add(string.Empty, string.Empty);
 
@@ -75,7 +73,7 @@ public class LifecycleConfiguration
         catch (Exception ex)
         {
             Console.WriteLine(ex.ToString());
-            // throw ex;
+            throw;
         }
         finally
         {

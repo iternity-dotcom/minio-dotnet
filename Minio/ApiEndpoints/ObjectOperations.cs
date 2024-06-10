@@ -15,24 +15,27 @@
  * limitations under the License.
  */
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Reactive.Linq;
-using System.Text;
-using System.Xml.Linq;
-using CommunityToolkit.HighPerformance;
+using System.Net;
+using System.Runtime.CompilerServices;
+using Minio.ApiEndpoints;
 using Minio.DataModel;
+using Minio.DataModel.Args;
+using Minio.DataModel.Encryption;
 using Minio.DataModel.ObjectLock;
+using Minio.DataModel.Response;
+using Minio.DataModel.Result;
+using Minio.DataModel.Select;
 using Minio.DataModel.Tags;
 using Minio.Exceptions;
 using Minio.Helper;
 
 namespace Minio;
 
+[SuppressMessage("Design", "MA0048:File name must match type name", Justification = "Split up in partial classes")]
 public partial class MinioClient : IObjectOperations
 {
-    private readonly List<string> supportedHeaders = new()
-        { "cache-control", "content-encoding", "content-type", "x-amz-acl", "content-disposition" };
-
     /// <summary>
     ///     Get an object. The object will be streamed to the callback given by the user.
     /// </summary>
@@ -69,9 +72,10 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         var selectObjectContentResponse =
             new SelectObjectContentResponse(response.StatusCode, response.Content, response.ContentBytes);
@@ -89,38 +93,36 @@ public partial class MinioClient : IObjectOperations
     /// <exception cref="InvalidObjectNameException">When object name is invalid</exception>
     /// <exception cref="BucketNotFoundException">When bucket is not found</exception>
     /// <exception cref="ObjectNotFoundException">When object is not found</exception>
-    public IObservable<Upload> ListIncompleteUploads(ListIncompleteUploadsArgs args,
-        CancellationToken cancellationToken = default)
+    public async IAsyncEnumerable<Upload> ListIncompleteUploadsEnumAsync(ListIncompleteUploadsArgs args,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        return Observable.Create<Upload>(
-            async obs =>
+        string nextKeyMarker = null;
+        string nextUploadIdMarker = null;
+        var isRunning = true;
+
+        while (isRunning)
+        {
+            var getArgs = new GetMultipartUploadsListArgs()
+                .WithBucket(args.BucketName)
+                .WithDelimiter(args.Delimiter)
+                .WithPrefix(args.Prefix)
+                .WithKeyMarker(nextKeyMarker)
+                .WithUploadIdMarker(nextUploadIdMarker);
+            var uploads = await GetMultipartUploadsListAsync(getArgs, cancellationToken).ConfigureAwait(false);
+            if (uploads is null)
             {
-                string nextKeyMarker = null;
-                string nextUploadIdMarker = null;
-                var isRunning = true;
+                isRunning = false;
+                continue;
+            }
 
-                while (isRunning)
-                {
-                    var getArgs = new GetMultipartUploadsListArgs()
-                        .WithBucket(args.BucketName)
-                        .WithDelimiter(args.Delimiter)
-                        .WithPrefix(args.Prefix)
-                        .WithKeyMarker(nextKeyMarker)
-                        .WithUploadIdMarker(nextUploadIdMarker);
-                    var uploads = await GetMultipartUploadsListAsync(getArgs, cancellationToken).ConfigureAwait(false);
-                    if (uploads is null)
-                    {
-                        isRunning = false;
-                        continue;
-                    }
+            foreach (var upload in uploads.Item2)
+                yield return upload;
 
-                    foreach (var upload in uploads.Item2) obs.OnNext(upload);
-                    nextKeyMarker = uploads.Item1.NextKeyMarker;
-                    nextUploadIdMarker = uploads.Item1.NextUploadIdMarker;
-                    isRunning = uploads.Item1.IsTruncated;
-                }
-            });
+            nextKeyMarker = uploads.Item1.NextKeyMarker;
+            nextUploadIdMarker = uploads.Item1.NextUploadIdMarker;
+            isRunning = uploads.Item1.IsTruncated;
+        }
     }
 
     /// <summary>
@@ -143,26 +145,23 @@ public partial class MinioClient : IObjectOperations
             .WithBucket(args.BucketName)
             .WithPrefix(args.ObjectName);
 
-        Upload[] uploads;
         try
         {
-            uploads = await ListIncompleteUploads(listUploadArgs, cancellationToken)?.ToArray();
+            await foreach (var upload in ListIncompleteUploadsEnumAsync(listUploadArgs, cancellationToken)
+                               .ConfigureAwait(false))
+                if (upload.Key.Equals(args.ObjectName, StringComparison.OrdinalIgnoreCase))
+                {
+                    var rmArgs = new RemoveUploadArgs()
+                        .WithBucket(args.BucketName)
+                        .WithObject(args.ObjectName)
+                        .WithUploadId(upload.UploadId);
+                    await RemoveUploadAsync(rmArgs, cancellationToken).ConfigureAwait(false);
+                }
         }
         catch (Exception ex) when (ex.GetType() == typeof(BucketNotFoundException))
         {
             throw;
         }
-
-        if (uploads is null) return;
-        foreach (var upload in uploads)
-            if (upload.Key.Equals(args.ObjectName, StringComparison.OrdinalIgnoreCase))
-            {
-                var rmArgs = new RemoveUploadArgs()
-                    .WithBucket(args.BucketName)
-                    .WithObject(args.ObjectName)
-                    .WithUploadId(upload.UploadId);
-                await RemoveUploadAsync(rmArgs, cancellationToken).ConfigureAwait(false);
-            }
     }
 
     /// <summary>
@@ -183,10 +182,11 @@ public partial class MinioClient : IObjectOperations
     public async Task<string> PresignedGetObjectAsync(PresignedGetObjectArgs args)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
-        var authenticator = new V4Authenticator(Secure, AccessKey, SecretKey, Region,
-            SessionToken);
-        return authenticator.PresignURL(requestMessageBuilder, args.Expiry, Region, SessionToken, args.RequestDate);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
+        var authenticator = new V4Authenticator(Config.Secure, Config.AccessKey, Config.SecretKey, Config.Region,
+            Config.SessionToken);
+        return authenticator.PresignURL(requestMessageBuilder, args.Expiry, Config.Region, Config.SessionToken,
+            args.RequestDate);
     }
 
     /// <summary>
@@ -206,25 +206,22 @@ public partial class MinioClient : IObjectOperations
             throw new ArgumentNullException(nameof(args));
 
         // string region = string.Empty;
-        var region = await GetRegion(args.BucketName).ConfigureAwait(false);
+        var region = await this.GetRegion(args.BucketName).ConfigureAwait(false);
         args.Validate();
         // Presigned operations are not allowed for anonymous users
-        if (string.IsNullOrEmpty(AccessKey) && string.IsNullOrEmpty(SecretKey))
+        if (string.IsNullOrEmpty(Config.AccessKey) && string.IsNullOrEmpty(Config.SecretKey))
             throw new MinioException("Presigned operations are not supported for anonymous credentials");
 
-        var authenticator = new V4Authenticator(Secure, AccessKey, SecretKey,
-            region, SessionToken);
-
-        // Get base64 encoded policy.
-        var policyBase64 = args.Policy.Base64();
+        var authenticator = new V4Authenticator(Config.Secure, Config.AccessKey, Config.SecretKey,
+            region, Config.SessionToken);
 
         var t = DateTime.UtcNow;
-        var signV4Algorithm = "AWS4-HMAC-SHA256";
+        const string signV4Algorithm = "AWS4-HMAC-SHA256";
         var credential = authenticator.GetCredentialString(t, region);
-        var signature = authenticator.PresignPostSignature(region, t, policyBase64);
+
         args = args.WithDate(t)
             .WithAlgorithm(signV4Algorithm)
-            .WithSessionToken(SessionToken)
+            .WithSessionToken(Config.SessionToken)
             .WithCredential(credential)
             .WithRegion(region);
 
@@ -234,15 +231,22 @@ public partial class MinioClient : IObjectOperations
 
         args.Policy.FormData["key"] = args.ObjectName;
 
-        args.Policy.FormData["policy"] = policyBase64;
         args.Policy.FormData["x-amz-algorithm"] = signV4Algorithm;
         args.Policy.FormData["x-amz-credential"] = credential;
-        args.Policy.FormData["x-amz-date"] = t.ToString("yyyyMMddTHHmmssZ");
-        if (!string.IsNullOrEmpty(SessionToken)) args.Policy.FormData["x-amz-security-token"] = SessionToken;
+        args.Policy.FormData["x-amz-date"] = t.ToString("yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture);
+
+        if (!string.IsNullOrEmpty(Config.SessionToken))
+            args.Policy.FormData["x-amz-security-token"] = Config.SessionToken;
+
+        // Get base64 encoded policy.
+        var policyBase64 = args.Policy.Base64();
+        args.Policy.FormData["policy"] = policyBase64;
+
+        var signature = authenticator.PresignPostSignature(region, t, policyBase64);
         args.Policy.FormData["x-amz-signature"] = signature;
 
-        uri = RequestUtil.MakeTargetURL(BaseUrl, Secure, args.BucketName, region, false);
-        return (uri, args.Policy.FormData);
+        Config.Uri = RequestUtil.MakeTargetURL(Config.BaseUrl, Config.Secure, args.BucketName, region, false);
+        return (Config.Uri, args.Policy.FormData);
     }
 
     /// <summary>
@@ -260,14 +264,14 @@ public partial class MinioClient : IObjectOperations
     public async Task<string> PresignedPutObjectAsync(PresignedPutObjectArgs args)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(HttpMethod.Put, args.BucketName,
+        var requestMessageBuilder = await this.CreateRequest(HttpMethod.Put, args.BucketName,
             args.ObjectName,
             args.Headers, // contentType
-            Convert.ToString(args.GetType()), // metaData
+            Convert.ToString(args.GetType(), CultureInfo.InvariantCulture), // metaData
             Utils.ObjectToByteArray(args.RequestBody)).ConfigureAwait(false);
-        var authenticator = new V4Authenticator(Secure, AccessKey, SecretKey, Region,
-            SessionToken);
-        return authenticator.PresignURL(requestMessageBuilder, args.Expiry, Region, SessionToken);
+        var authenticator = new V4Authenticator(Config.Secure, Config.AccessKey, Config.SecretKey, Config.Region,
+            Config.SessionToken);
+        return authenticator.PresignURL(requestMessageBuilder, args.Expiry, Config.Region, Config.SessionToken);
     }
 
     /// <summary>
@@ -291,9 +295,10 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         var legalHoldConfig = new GetLegalHoldResponse(response.StatusCode, response.Content);
         return legalHoldConfig.CurrentLegalHoldConfiguration?.Status.Equals("on", StringComparison.OrdinalIgnoreCase) ==
@@ -321,9 +326,10 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -342,9 +348,10 @@ public partial class MinioClient : IObjectOperations
     public async Task<Tagging> GetObjectTagsAsync(GetObjectTagsArgs args, CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         var getObjectTagsResponse = new GetObjectTagsResponse(response.StatusCode, response.Content);
         return getObjectTagsResponse.ObjectTags;
@@ -368,9 +375,10 @@ public partial class MinioClient : IObjectOperations
     public async Task RemoveObjectAsync(RemoveObjectArgs args, CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var restResponse =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -390,23 +398,16 @@ public partial class MinioClient : IObjectOperations
     /// <exception cref="ObjectNotFoundException">When object is not found</exception>
     /// <exception cref="NotImplementedException">When a functionality or extension is not implemented</exception>
     /// <exception cref="MalFormedXMLException">When configuration XML provided is invalid</exception>
-    public async Task<IObservable<DeleteError>> RemoveObjectsAsync(RemoveObjectsArgs args,
+    public async Task<IList<DeleteError>> RemoveObjectsAsync(RemoveObjectsArgs args,
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
         IList<DeleteError> errs = new List<DeleteError>();
-        if (args.ObjectNamesVersions.Count > 0)
-            errs = await RemoveObjectVersionsHelper(args, errs.ToList(), cancellationToken).ConfigureAwait(false);
-        else
-            errs = await RemoveObjectsHelper(args, errs, cancellationToken).ConfigureAwait(false);
+        errs = args.ObjectNamesVersions.Count > 0
+            ? await RemoveObjectVersionsHelper(args, errs.ToList(), cancellationToken).ConfigureAwait(false)
+            : await RemoveObjectsHelper(args, errs, cancellationToken).ConfigureAwait(false);
 
-        return Observable.Create<DeleteError>( // From Current change
-            async obs =>
-            {
-                await Task.Yield();
-                foreach (var error in errs) obs.OnNext(error);
-            }
-        );
+        return errs;
     }
 
     /// <summary>
@@ -428,9 +429,10 @@ public partial class MinioClient : IObjectOperations
     public async Task SetObjectTagsAsync(SetObjectTagsArgs args, CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -450,9 +452,10 @@ public partial class MinioClient : IObjectOperations
     public async Task RemoveObjectTagsAsync(RemoveObjectTagsArgs args, CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -477,9 +480,10 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -503,9 +507,10 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         var retentionResponse = new GetRetentionResponse(response.StatusCode, response.Content);
         return retentionResponse.CurrentRetentionConfiguration;
@@ -532,9 +537,10 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -561,19 +567,25 @@ public partial class MinioClient : IObjectOperations
         args?.Validate();
         args.SSE?.Marshal(args.Headers);
 
-        // Upload object in single part if size falls under restricted part size.
-        if (args.ObjectSize < Constants.MinimumPartSize && args.ObjectSize >= 0 && args.ObjectStreamData is not null)
+        var isSnowball = args.Headers.ContainsKey("X-Amz-Meta-Snowball-Auto-Extract") &&
+                         Convert.ToBoolean(args.Headers["X-Amz-Meta-Snowball-Auto-Extract"],
+                             CultureInfo.InvariantCulture);
+
+        // Upload object in single part if size falls under restricted part size
+        // or the request has snowball objects
+        if ((args.ObjectSize < Constants.MinimumPartSize || isSnowball) && args.ObjectSize >= 0 &&
+            args.ObjectStreamData is not null)
         {
             var bytes = await ReadFullAsync(args.ObjectStreamData, (int)args.ObjectSize).ConfigureAwait(false);
             var bytesRead = bytes.Length;
             if (bytesRead != (int)args.ObjectSize)
                 throw new UnexpectedShortReadException(
-                    $"Data read {bytesRead} is shorter than the size {args.ObjectSize} of input buffer.");
+                    $"Data read {bytesRead.ToString(CultureInfo.InvariantCulture)} is shorter than the size {args.ObjectSize.ToString(CultureInfo.InvariantCulture)} of input buffer.");
 
             args = args.WithRequestBody(bytes)
                 .WithStreamData(null)
                 .WithObjectSize(bytesRead);
-            return await PutObjectSinglePartAsync(args, cancellationToken).ConfigureAwait(false);
+            return await PutObjectSinglePartAsync(args, cancellationToken, true).ConfigureAwait(false);
         }
 
         // For all sizes greater than 5MiB do multipart.
@@ -598,6 +610,7 @@ public partial class MinioClient : IObjectOperations
             .WithContentType(args.ContentType)
             .WithUploadId(uploadId)
             .WithStreamData(args.ObjectStreamData)
+            .WithProgress(args.Progress)
             .WithRequestBody(args.RequestBody)
             .WithHeaders(args.Headers);
         IDictionary<int, string> etags = null;
@@ -657,7 +670,7 @@ public partial class MinioClient : IObjectOperations
             .WithVersionId(args.SourceObject.VersionId)
             .WithServerSideEncryption(sseGet);
         var stat = await StatObjectAsync(statArgs, cancellationToken).ConfigureAwait(false);
-        args.WithCopyObjectSourceStats(stat);
+        _ = args.WithCopyObjectSourceStats(stat);
         if (stat.TaggingCount > 0 && !args.ReplaceTagsDirective)
         {
             var getTagArgs = new GetObjectTagsArgs()
@@ -666,7 +679,7 @@ public partial class MinioClient : IObjectOperations
                 .WithVersionId(args.SourceObject.VersionId)
                 .WithServerSideEncryption(sseGet);
             var tag = await GetObjectTagsAsync(getTagArgs, cancellationToken).ConfigureAwait(false);
-            args.WithTagging(tag);
+            _ = args.WithTagging(tag);
         }
 
         args.Validate();
@@ -675,12 +688,14 @@ public partial class MinioClient : IObjectOperations
 
         if (srcByteRangeSize > args.SourceObjectInfo.Size ||
             (srcByteRangeSize > 0 &&
-             args.SourceObject.CopyOperationConditions.byteRangeEnd >= args.SourceObjectInfo.Size))
-            throw new ArgumentException("Specified byte range (" +
-                                        args.SourceObject.CopyOperationConditions.byteRangeStart +
-                                        "-" + args.SourceObject.CopyOperationConditions.byteRangeEnd +
-                                        ") does not fit within source object (size=" +
-                                        args.SourceObjectInfo.Size + ")");
+             args.SourceObject.CopyOperationConditions.byteRangeEnd >=
+             args.SourceObjectInfo.Size))
+            throw new InvalidDataException($"Specified byte range ({args.SourceObject
+                .CopyOperationConditions
+                .byteRangeStart.ToString(CultureInfo.InvariantCulture)}-{args.SourceObject
+                .CopyOperationConditions.byteRangeEnd.ToString(CultureInfo.InvariantCulture)
+            }) does not fit within source object (size={args.SourceObjectInfo.Size
+                .ToString(CultureInfo.InvariantCulture)})");
 
         if (copySize > Constants.MaxSingleCopyObjectSize ||
             (srcByteRangeSize > 0 &&
@@ -710,16 +725,14 @@ public partial class MinioClient : IObjectOperations
                 .WithReplaceTagsDirective(args.ReplaceTagsDirective)
                 .WithTagging(args.ObjectTags);
             cpReqArgs.Validate();
-            Dictionary<string, string> newMeta;
-            if (args.ReplaceMetadataDirective)
-                newMeta = new Dictionary<string, string>(args.Headers);
-            else
-                newMeta = new Dictionary<string, string>(args.SourceObjectInfo.MetaData);
-            if (args.SourceObject.SSE is not null && args.SourceObject.SSE is SSECopy)
+            var newMeta = args.ReplaceMetadataDirective
+                ? new Dictionary<string, string>(args.Headers, StringComparer.Ordinal)
+                : new Dictionary<string, string>(args.SourceObjectInfo.MetaData, StringComparer.Ordinal);
+            if (args.SourceObject.SSE is not null and SSECopy)
                 args.SourceObject.SSE.Marshal(newMeta);
             args.SSE?.Marshal(newMeta);
-            cpReqArgs.WithHeaders(newMeta);
-            await CopyObjectRequestAsync(cpReqArgs, cancellationToken).ConfigureAwait(false);
+            _ = cpReqArgs.WithHeaders(newMeta);
+            _ = await CopyObjectRequestAsync(cpReqArgs, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -752,11 +765,12 @@ public partial class MinioClient : IObjectOperations
     public async Task<ObjectStat> StatObjectAsync(StatObjectArgs args, CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-        var responseHeaders = new Dictionary<string, string>();
+        var responseHeaders = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var param in response.Headers.ToList()) responseHeaders.Add(param.Key, param.Value);
         var statResponse = new StatObjectResponse(response.StatusCode, response.Content, response.Headers, args);
 
@@ -774,9 +788,10 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         var getUploadResponse = new GetMultipartUploadsListResponse(response.StatusCode, response.Content);
 
@@ -792,9 +807,10 @@ public partial class MinioClient : IObjectOperations
     private async Task RemoveUploadAsync(RemoveUploadArgs args, CancellationToken cancellationToken)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
     }
 
@@ -806,6 +822,10 @@ public partial class MinioClient : IObjectOperations
     ///     Headers, SSE Headers
     /// </param>
     /// <param name="cancellationToken">Optional cancellation token to cancel the operation</param>
+    /// <param name="singleFile">
+    ///     This boolean parameter differentiates single part file upload and
+    ///     multi part file upload as this function is shared by both.
+    /// </param>
     /// <returns></returns>
     /// <exception cref="AuthorizationException">When access or secret key is invalid</exception>
     /// <exception cref="InvalidBucketNameException">When bucket name is invalid</exception>
@@ -816,13 +836,33 @@ public partial class MinioClient : IObjectOperations
     /// <exception cref="InvalidOperationException">The file stream is currently in a read operation</exception>
     /// <exception cref="AccessDeniedException">For encrypted PUT operation, Access is denied if the key is wrong</exception>
     private async Task<PutObjectResponse> PutObjectSinglePartAsync(PutObjectArgs args,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool singleFile = false)
     {
         //Skipping validate as we need the case where stream sends 0 bytes
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var progressReport = new ProgressReport();
+        if (singleFile) args.Progress?.Report(progressReport);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
+
+        if (singleFile && args.Progress is not null)
+        {
+            var statArgs = new StatObjectArgs()
+                .WithBucket(args.BucketName)
+                .WithObject(args.ObjectName);
+            var stat = await StatObjectAsync(statArgs, cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                progressReport.Percentage = 100;
+                progressReport.TotalBytesTransferred = stat.Size;
+            }
+
+            args.Progress.Report(progressReport);
+        }
+
         return new PutObjectResponse(response.StatusCode, response.Content, response.Headers,
             args.ObjectSize, args.ObjectName);
     }
@@ -845,16 +885,18 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        dynamic multiPartInfo = Utils.CalculateMultiPartSize(args.ObjectSize);
-        double partSize = multiPartInfo.partSize;
-        double partCount = multiPartInfo.partCount;
-        double lastPartSize = multiPartInfo.lastPartSize;
+        var multiPartInfo = Utils.CalculateMultiPartSize(args.ObjectSize);
+        var partSize = multiPartInfo.PartSize;
+        var partCount = multiPartInfo.PartCount;
+        var lastPartSize = multiPartInfo.LastPartSize;
         var totalParts = new Part[(int)partCount];
 
         var expectedReadSize = partSize;
         int partNumber;
         var numPartsUploaded = 0;
         var etags = new Dictionary<int, string>();
+        var progressReport = new ProgressReport();
+        args.Progress?.Report(progressReport);
         for (partNumber = 1; partNumber <= partCount; partNumber++)
         {
             var dataToCopy = await ReadFullAsync(args.ObjectStreamData, (int)partSize).ConfigureAwait(false);
@@ -870,8 +912,13 @@ public partial class MinioClient : IObjectOperations
 
             numPartsUploaded++;
             totalParts[partNumber - 1] = new Part
-                { PartNumber = partNumber, ETag = etag, Size = (long)expectedReadSize };
+            {
+                PartNumber = partNumber, ETag = etag, Size = (long)expectedReadSize
+            };
             etags[partNumber] = etag;
+            if (!dataToCopy.IsEmpty) progressReport.TotalBytesTransferred += dataToCopy.Length;
+            if (args.ObjectSize != -1) progressReport.Percentage = (int)(100 * partNumber / partCount);
+            args.Progress?.Report(progressReport);
         }
 
         // This shouldn't happen where stream size is known.
@@ -905,10 +952,10 @@ public partial class MinioClient : IObjectOperations
     private async Task MultipartCopyUploadAsync(MultipartCopyUploadArgs args,
         CancellationToken cancellationToken = default)
     {
-        dynamic multiPartInfo = Utils.CalculateMultiPartSize(args.CopySize, true);
-        double partSize = multiPartInfo.partSize;
-        double partCount = multiPartInfo.partCount;
-        double lastPartSize = multiPartInfo.lastPartSize;
+        var multiPartInfo = Utils.CalculateMultiPartSize(args.CopySize, true);
+        var partSize = multiPartInfo.PartSize;
+        var partCount = multiPartInfo.PartCount;
+        var lastPartSize = multiPartInfo.LastPartSize;
         var totalParts = new Part[(int)partCount];
 
         var nmuArgs = new NewMultipartUploadCopyArgs()
@@ -927,19 +974,18 @@ public partial class MinioClient : IObjectOperations
         for (partNumber = 1; partNumber <= partCount; partNumber++)
         {
             var partCondition = args.SourceObject.CopyOperationConditions.Clone();
-            partCondition.byteRangeStart = (long)partSize * (partNumber - 1) + partCondition.byteRangeStart;
-            if (partNumber < partCount)
-                partCondition.byteRangeEnd = partCondition.byteRangeStart + (long)partSize - 1;
-            else
-                partCondition.byteRangeEnd = partCondition.byteRangeStart + (long)lastPartSize - 1;
-            var queryMap = new Dictionary<string, string>();
+            partCondition.byteRangeStart = ((long)partSize * (partNumber - 1)) + partCondition.byteRangeStart;
+            partCondition.byteRangeEnd = partNumber < partCount
+                ? partCondition.byteRangeStart + (long)partSize - 1
+                : partCondition.byteRangeStart + (long)lastPartSize - 1;
+            var queryMap = new Dictionary<string, string>(StringComparer.Ordinal);
             if (!string.IsNullOrEmpty(uploadId) && partNumber > 0)
             {
                 queryMap.Add("uploadId", uploadId);
-                queryMap.Add("partNumber", partNumber.ToString());
+                queryMap.Add("partNumber", partNumber.ToString(CultureInfo.InvariantCulture));
             }
 
-            if (args.SourceObject.SSE is not null && args.SourceObject.SSE is SSECopy)
+            if (args.SourceObject.SSE is not null and SSECopy)
                 args.SourceObject.SSE.Marshal(args.Headers);
             args.SSE?.Marshal(args.Headers);
             var cpPartArgs = new CopyObjectRequestArgs()
@@ -959,7 +1005,9 @@ public partial class MinioClient : IObjectOperations
                 (CopyPartResult)await CopyObjectRequestAsync(cpPartArgs, cancellationToken).ConfigureAwait(false);
 
             totalParts[partNumber - 1] = new Part
-                { PartNumber = partNumber, ETag = cpPartResult.ETag, Size = (long)expectedReadSize };
+            {
+                PartNumber = partNumber, ETag = cpPartResult.ETag, Size = (long)expectedReadSize
+            };
         }
 
         var etags = new Dictionary<int, string>();
@@ -968,7 +1016,7 @@ public partial class MinioClient : IObjectOperations
             .WithUploadId(uploadId)
             .WithETags(etags);
         // Complete multi part upload
-        await CompleteMultipartUploadAsync(completeMultipartUploadArgs, cancellationToken).ConfigureAwait(false);
+        _ = await CompleteMultipartUploadAsync(completeMultipartUploadArgs, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -990,9 +1038,10 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         var uploadResponse = new NewMultipartUploadResponse(response.StatusCode, response.Content);
         return uploadResponse.UploadId;
@@ -1017,9 +1066,10 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken = default)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         var uploadResponse = new NewMultipartUploadResponse(response.StatusCode, response.Content);
         return uploadResponse.UploadId;
@@ -1033,9 +1083,10 @@ public partial class MinioClient : IObjectOperations
     private async Task<object> CopyObjectRequestAsync(CopyObjectRequestArgs args, CancellationToken cancellationToken)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         var copyObjectResponse =
             new CopyObjectResponse(response.StatusCode, response.Content, args.CopyOperationObjectType);
@@ -1058,144 +1109,13 @@ public partial class MinioClient : IObjectOperations
         CancellationToken cancellationToken)
     {
         args?.Validate();
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         return new PutObjectResponse(response.StatusCode, response.Content, response.Headers, -1,
             args.ObjectName);
-    }
-
-    /// <summary>
-    ///     Internal method to complete multi part upload of object to server.
-    /// </summary>
-    /// <param name="bucketName">Bucket Name</param>
-    /// <param name="objectName">Object to be uploaded</param>
-    /// <param name="uploadId">Upload Id</param>
-    /// <param name="etags">Etags</param>
-    /// <param name="cancellationToken">Optional cancellation token to cancel the operation</param>
-    /// <returns></returns>
-    private async Task CompleteMultipartUploadAsync(string bucketName, string objectName, string uploadId,
-        IDictionary<int, string> etags, CancellationToken cancellationToken)
-    {
-        var requestMessageBuilder = await CreateRequest(HttpMethod.Post, bucketName,
-                objectName)
-            .ConfigureAwait(false);
-        requestMessageBuilder.AddQueryParameter("uploadId", $"{uploadId}");
-
-        var parts = new List<XElement>();
-
-        for (var i = 1; i <= etags.Count; i++)
-            parts.Add(new XElement("Part",
-                new XElement("PartNumber", i),
-                new XElement("ETag", etags[i])));
-
-        var completeMultipartUploadXml = new XElement("CompleteMultipartUpload", parts);
-        var bodyString = completeMultipartUploadXml.ToString();
-
-        requestMessageBuilder.AddOrUpdateHeaderParameter("Content-Type", "application/xml");
-
-        requestMessageBuilder.AddXmlBody(bodyString);
-        using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    ///     Returns an async observable of parts corresponding to a uploadId for a specific bucket and objectName
-    /// </summary>
-    /// <param name="bucketName">Bucket Name</param>
-    /// <param name="objectName">Object Name</param>
-    /// <param name="uploadId"></param>
-    /// <param name="cancellationToken">Optional cancellation token to cancel the operation</param>
-    /// <returns></returns>
-    private IObservable<Part> ListParts(string bucketName, string objectName, string uploadId,
-        CancellationToken cancellationToken)
-    {
-        return Observable.Create<Part>(
-            async obs =>
-            {
-                var nextPartNumberMarker = 0;
-                var isRunning = true;
-                while (isRunning)
-                {
-                    var uploads = await GetListPartsAsync(bucketName, objectName, uploadId, nextPartNumberMarker,
-                        cancellationToken).ConfigureAwait(false);
-                    foreach (var part in uploads.Item2) obs.OnNext(part);
-
-                    nextPartNumberMarker = uploads.Item1.NextPartNumberMarker;
-                    isRunning = uploads.Item1.IsTruncated;
-                }
-            });
-    }
-
-    /// <summary>
-    ///     Gets the list of parts corresponding to a uploadId for given bucket and object
-    /// </summary>
-    /// <param name="bucketName">Bucket Name</param>
-    /// <param name="objectName">Object Name</param>
-    /// <param name="uploadId"></param>
-    /// <param name="partNumberMarker"></param>
-    /// <param name="cancellationToken">Optional cancellation token to cancel the operation</param>
-    /// <returns></returns>
-    private async Task<Tuple<ListPartsResult, List<Part>>> GetListPartsAsync(string bucketName, string objectName,
-        string uploadId, int partNumberMarker, CancellationToken cancellationToken)
-    {
-        var requestMessageBuilder = await CreateRequest(HttpMethod.Get, bucketName,
-                objectName)
-            .ConfigureAwait(false);
-        requestMessageBuilder.AddQueryParameter("uploadId", $"{uploadId}");
-        if (partNumberMarker > 0) requestMessageBuilder.AddQueryParameter("part-number-marker", $"{partNumberMarker}");
-        requestMessageBuilder.AddQueryParameter("max-parts", "1000");
-
-        using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
-        using var stream = Encoding.UTF8.GetBytes(response.Content).AsMemory().AsStream();
-        var listPartsResult = Utils.DeserializeXml<ListPartsResult>(stream);
-
-        var root = XDocument.Parse(response.Content);
-        XNamespace ns = Utils.DetermineNamespace(root);
-
-        var uploads = from c in root.Root.Descendants(ns + "Part")
-            select new Part
-            {
-                PartNumber = int.Parse(c.Element(ns + "PartNumber").Value,
-                    CultureInfo.CurrentCulture),
-                ETag = c.Element(ns + "ETag").Value.Replace("\"", string.Empty),
-                Size = long.Parse(c.Element(ns + "Size").Value,
-                    CultureInfo.CurrentCulture)
-            };
-
-        return Tuple.Create(listPartsResult, uploads.ToList());
-    }
-
-    /// <summary>
-    ///     Start a new multi-part upload request
-    /// </summary>
-    /// <param name="bucketName">Bucket Name</param>
-    /// <param name="objectName">Object Name</param>
-    /// <param name="metaData"></param>
-    /// <param name="sseHeaders"> Server-side encryption options</param>
-    /// <param name="cancellationToken">Optional cancellation token to cancel the operation</param>
-    /// <returns></returns>
-    private async Task<string> NewMultipartUploadAsync(string bucketName, string objectName,
-        IDictionary<string, string> metaData, Dictionary<string, string> sseHeaders,
-        CancellationToken cancellationToken = default)
-    {
-        foreach (var kv in sseHeaders) metaData.Add(kv.Key, kv.Value);
-
-        var requestMessageBuilder = await CreateRequest(HttpMethod.Post, bucketName,
-            objectName, metaData).ConfigureAwait(false);
-        requestMessageBuilder.AddQueryParameter("uploads", "");
-
-        using var response = await ExecuteTaskAsync(NoErrorHandlers,
-            requestMessageBuilder, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        using var stream = response.ContentBytes.AsStream();
-        var newUpload = Utils.DeserializeXml<InitiateMultipartUploadResult>(stream);
-        return newUpload.UploadId;
     }
 
     /// <summary>
@@ -1211,10 +1131,10 @@ public partial class MinioClient : IObjectOperations
         while (totalRead < currentPartSize)
         {
             Memory<byte> curData = new byte[currentPartSize - totalRead];
-            var curRead = await data.ReadAsync(curData.Slice(0, currentPartSize - totalRead)).ConfigureAwait(false);
+            var curRead = await data.ReadAsync(curData[..(currentPartSize - totalRead)]).ConfigureAwait(false);
             if (curRead == 0) break;
             for (var i = 0; i < curRead; i++)
-                curData.Slice(i, 1).CopyTo(result.Slice(totalRead + i));
+                curData.Slice(i, 1).CopyTo(result[(totalRead + i)..]);
             totalRead += curRead;
         }
 
@@ -1224,156 +1144,7 @@ public partial class MinioClient : IObjectOperations
 
         Memory<byte> truncatedResult = new byte[totalRead];
         for (var i = 0; i < totalRead; i++)
-            result.Slice(i, 1).CopyTo(truncatedResult.Slice(i));
+            result.Slice(i, 1).CopyTo(truncatedResult[i..]);
         return truncatedResult;
-    }
-
-    /// <summary>
-    ///     Create the copy request, execute it and
-    /// </summary>
-    /// <param name="bucketName">Bucket name where the object to be copied exists.</param>
-    /// <param name="objectName">Object name source to be copied.</param>
-    /// <param name="destBucketName">Bucket name where the object will be copied to.</param>
-    /// <param name="destObjectName">
-    ///     Object name to be created, if not provided uses source object name as destination object
-    ///     name.
-    /// </param>
-    /// <param name="copyConditions">
-    ///     optionally can take a key value CopyConditions as well for conditionally attempting
-    ///     copyObject.
-    /// </param>
-    /// <param name="customHeaders">optional custom header to specify byte range</param>
-    /// <param name="queryMap">optional query parameters like upload id, part number etc for copy operations</param>
-    /// <param name="type">Type of XML serialization to be applied on the server response</param>
-    /// <param name="cancellationToken">Optional cancellation token to cancel the operation</param>
-    /// <returns></returns>
-    private async Task<object> CopyObjectRequestAsync(string bucketName, string objectName, string destBucketName,
-        string destObjectName, CopyConditions copyConditions, IDictionary<string, string> customHeaders,
-        IDictionary<string, string> queryMap, Type type, CancellationToken cancellationToken)
-    {
-        // Escape source object path.
-        var sourceObjectPath = bucketName + "/" + Utils.UrlEncode(objectName);
-
-        // Destination object name is optional, if empty default to source object name.
-        destObjectName ??= objectName;
-
-        var requestMessageBuilder = await CreateRequest(HttpMethod.Put, destBucketName,
-                destObjectName,
-                customHeaders)
-            .ConfigureAwait(false);
-        if (queryMap is not null)
-            foreach (var query in queryMap)
-                requestMessageBuilder.AddQueryParameter(query.Key, query.Value);
-        // Set the object source
-        requestMessageBuilder.AddOrUpdateHeaderParameter("x-amz-copy-source", sourceObjectPath);
-
-        // If no conditions available, skip addition else add the conditions to the header
-        if (copyConditions is not null)
-            foreach (var item in copyConditions.Conditions)
-                requestMessageBuilder.AddOrUpdateHeaderParameter(item.Key, item.Value);
-
-        using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
-        object copyResult = null;
-
-        if (type == typeof(CopyObjectResult))
-        {
-            using var stream = response.ContentBytes.AsStream();
-            copyResult = Utils.DeserializeXml<CopyObjectResult>(stream);
-        }
-
-        if (type == typeof(CopyPartResult))
-        {
-            using var stream = response.ContentBytes.AsStream();
-            copyResult = Utils.DeserializeXml<CopyPartResult>(stream);
-        }
-
-        return copyResult;
-    }
-
-    /// <summary>
-    ///     Make a multi part copy upload for objects larger than 5GB or if CopyCondition specifies a byte range.
-    /// </summary>
-    /// <param name="bucketName">source bucket name</param>
-    /// <param name="objectName">source object name</param>
-    /// <param name="destBucketName">destination bucket name</param>
-    /// <param name="destObjectName">destination object name</param>
-    /// <param name="copyConditions">copyconditions </param>
-    /// <param name="copySize">size of copy upload</param>
-    /// <param name="metadata">optional metadata on the destination side</param>
-    /// <param name="sseSrc">optional Server-side encryption options</param>
-    /// <param name="sseDest">optional Server-side encryption options</param>
-    /// <param name="cancellationToken">Optional cancellation token to cancel the operation</param>
-    /// <returns></returns>
-    private async Task MultipartCopyUploadAsync(string bucketName, string objectName, string destBucketName,
-        string destObjectName, CopyConditions copyConditions, long copySize,
-        IDictionary<string, string> metadata = null, IServerSideEncryption sseSrc = null,
-        IServerSideEncryption sseDest = null, CancellationToken cancellationToken = default)
-    {
-        // For all sizes greater than 5GB or if Copy byte range specified in conditions and byte range larger
-        // than minimum part size (5 MB) do multipart.
-        dynamic multiPartInfo = Utils.CalculateMultiPartSize(copySize, true);
-        double partSize = multiPartInfo.partSize;
-        double partCount = multiPartInfo.partCount;
-        double lastPartSize = multiPartInfo.lastPartSize;
-        var totalParts = new Part[(int)partCount];
-
-        var sseHeaders = new Dictionary<string, string>();
-        sseDest?.Marshal(sseHeaders);
-
-        // No need to resume upload since this is a Server-side copy. Just initiate a new upload.
-        var uploadId = await NewMultipartUploadAsync(destBucketName,
-                destObjectName, metadata, sseHeaders, cancellationToken)
-            .ConfigureAwait(false);
-
-        // Upload each part
-        var expectedReadSize = partSize;
-        int partNumber;
-        for (partNumber = 1; partNumber <= partCount; partNumber++)
-        {
-            var partCondition = copyConditions.Clone();
-            partCondition.byteRangeStart = (long)partSize * (partNumber - 1) + partCondition.byteRangeStart;
-            if (partNumber < partCount)
-                partCondition.byteRangeEnd = partCondition.byteRangeStart + (long)partSize - 1;
-            else
-                partCondition.byteRangeEnd = partCondition.byteRangeStart + (long)lastPartSize - 1;
-
-            var queryMap = new Dictionary<string, string>();
-            if (!string.IsNullOrEmpty(uploadId) && partNumber > 0)
-            {
-                queryMap.Add("uploadId", uploadId);
-                queryMap.Add("partNumber", partNumber.ToString());
-            }
-
-            var customHeader = new Dictionary<string, string>
-            {
-                {
-                    "x-amz-copy-source-range",
-                    "bytes=" + partCondition.byteRangeStart + "-" + partCondition.byteRangeEnd
-                }
-            };
-
-            if (sseSrc is not null && sseSrc is SSECopy) sseSrc.Marshal(customHeader);
-            sseDest?.Marshal(customHeader);
-
-            var cpPartResult = (CopyPartResult)await CopyObjectRequestAsync(bucketName, objectName,
-                destBucketName, destObjectName, copyConditions, customHeader, queryMap, typeof(CopyPartResult),
-                cancellationToken).ConfigureAwait(false);
-
-            totalParts[partNumber - 1] = new Part
-            {
-                PartNumber = partNumber,
-                ETag = cpPartResult.ETag,
-                Size = (long)expectedReadSize
-            };
-        }
-
-        var etags = new Dictionary<int, string>();
-        for (partNumber = 1; partNumber <= partCount; partNumber++) etags[partNumber] = totalParts[partNumber - 1].ETag;
-        // Complete multi part upload
-        await CompleteMultipartUploadAsync(destBucketName, destObjectName,
-            uploadId, etags, cancellationToken).ConfigureAwait(false);
     }
 }

@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
+using System.Diagnostics.CodeAnalysis;
 using System.Xml;
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Notification;
 
 /// <summary>
 ///     Helper class to parse NotificationConfiguration from AWS S3 response XML.
@@ -26,19 +27,27 @@ namespace Minio.DataModel;
 [XmlRoot(ElementName = "NotificationConfiguration", Namespace = "http://s3.amazonaws.com/doc/2006-03-01/")]
 public class BucketNotification
 {
-    [XmlElement("CloudFunctionConfiguration")]
-    public List<LambdaConfig> LambdaConfigs;
-
-    [XmlElement("TopicConfiguration")] public List<TopicConfig> TopicConfigs;
-    [XmlElement("QueueConfiguration")] public List<QueueConfig> QueueConfigs;
-
-
     public BucketNotification()
     {
         LambdaConfigs = new List<LambdaConfig>();
         TopicConfigs = new List<TopicConfig>();
         QueueConfigs = new List<QueueConfig>();
     }
+
+    [XmlElement("CloudFunctionConfiguration")]
+    [SuppressMessage("Design", "CA1002:Do not expose generic lists",
+        Justification = "Needs to be concrete type for XML deserialization")]
+    public List<LambdaConfig> LambdaConfigs { get; set; }
+
+    [XmlElement("TopicConfiguration")]
+    [SuppressMessage("Design", "CA1002:Do not expose generic lists",
+        Justification = "Needs to be concrete type for XML deserialization")]
+    public List<TopicConfig> TopicConfigs { get; set; }
+
+    [XmlElement("QueueConfiguration")]
+    [SuppressMessage("Design", "CA1002:Do not expose generic lists",
+        Justification = "Needs to be concrete type for XML deserialization")]
+    public List<QueueConfig> QueueConfigs { get; set; }
 
     public string Name { get; set; }
 
@@ -129,10 +138,7 @@ public class BucketNotification
     /// <returns></returns>
     public string ToXML()
     {
-        var settings = new XmlWriterSettings
-        {
-            OmitXmlDeclaration = true
-        };
+        var settings = new XmlWriterSettings { OmitXmlDeclaration = true };
         using var ms = new MemoryStream();
         using var xmlWriter = XmlWriter.Create(ms, settings);
         var names = new XmlSerializerNamespaces();
@@ -142,7 +148,7 @@ public class BucketNotification
         cs.Serialize(xmlWriter, this, names);
 
         ms.Flush();
-        ms.Seek(0, SeekOrigin.Begin);
+        _ = ms.Seek(0, SeekOrigin.Begin);
         using var streamReader = new StreamReader(ms);
         return streamReader.ReadToEnd();
     }

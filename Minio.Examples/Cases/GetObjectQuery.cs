@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+using Minio.DataModel.Args;
+
 namespace Minio.Examples.Cases;
 
 internal static class GetObjectQuery
@@ -38,7 +40,7 @@ internal static class GetObjectQuery
                 .WithFile(fileName)
                 .WithMatchETag(matchEtag)
                 .WithModifiedSince(modifiedSince);
-            await minio.GetObjectAsync(args).ConfigureAwait(false);
+            _ = await minio.GetObjectAsync(args).ConfigureAwait(false);
             Console.WriteLine(
                 $"Downloaded the file {fileName} for object {objectName} with given query parameters in bucket {bucketName}");
             Console.WriteLine();

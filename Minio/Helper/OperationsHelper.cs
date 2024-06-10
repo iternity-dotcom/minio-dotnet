@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2020 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,13 +14,17 @@
  * limitations under the License.
  */
 
+using System.Diagnostics.CodeAnalysis;
 using Minio.DataModel;
+using Minio.DataModel.Args;
+using Minio.DataModel.Response;
 using Minio.Exceptions;
 using Minio.Helper;
 
 namespace Minio;
 
-public partial class MinioClient
+[SuppressMessage("Design", "MA0048:File name must match type name", Justification = "Split up in partial classes")]
+public partial class MinioClient : IMinioClient
 {
     /// <summary>
     ///     private helper method to remove list of objects from bucket
@@ -42,14 +46,12 @@ public partial class MinioClient
             .WithUnModifiedSince(args.UnModifiedSince)
             .WithServerSideEncryption(args.SSE)
             .WithHeaders(args.Headers);
-        if (args.OffsetLengthSet) statArgs.WithOffsetAndLength(args.ObjectOffset, args.ObjectLength);
+        if (args.OffsetLengthSet) _ = statArgs.WithOffsetAndLength(args.ObjectOffset, args.ObjectLength);
         var objStat = await StatObjectAsync(statArgs, cancellationToken).ConfigureAwait(false);
         args?.Validate();
         if (args.FileName is not null)
             await GetObjectFileAsync(args, objStat, cancellationToken).ConfigureAwait(false);
-        else if (args.CallBack is not null)
-            await GetObjectStreamAsync(args, objStat, args.CallBack, cancellationToken).ConfigureAwait(false);
-        else await GetObjectStreamAsync(args, objStat, args.FuncCallBack, cancellationToken).ConfigureAwait(false);
+        else await GetObjectStreamAsync(args, cancellationToken).ConfigureAwait(false);
         return objStat;
     }
 
@@ -72,15 +74,19 @@ public partial class MinioClient
         Utils.ValidateFile(tempFileName);
         if (File.Exists(tempFileName)) File.Delete(tempFileName);
 
-        var callbackAsync = async (Stream stream, CancellationToken cancellationToken) =>
+        async Task callbackAsync(Stream stream, CancellationToken cancellationToken)
         {
-            using var dest = new FileStream(tempFileName, FileMode.Create, FileAccess.Write);
 #if NETSTANDARD
+            using var dest = new FileStream(tempFileName, FileMode.Create, FileAccess.Write);
             await stream.CopyToAsync(dest).ConfigureAwait(false);
 #else
-            await stream.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
+            var dest = new FileStream(tempFileName, FileMode.Create, FileAccess.Write);
+            await using (dest.ConfigureAwait(false))
+            {
+                await stream.CopyToAsync(dest, cancellationToken).ConfigureAwait(false);
+            }
 #endif
-        };
+        }
 
 #pragma warning disable IDISP001 // Dispose created
         var cts = new CancellationTokenSource();
@@ -88,53 +94,23 @@ public partial class MinioClient
         cts.CancelAfter(TimeSpan.FromSeconds(15));
         args.WithCallbackStream(async (stream, cancellationToken) =>
         {
-            await callbackAsync(stream, cts.Token).ConfigureAwait(false);
+            await callbackAsync(stream, cancellationToken).ConfigureAwait(false);
             Utils.MoveWithReplace(tempFileName, args.FileName);
         });
-        return GetObjectStreamAsync(args, objectStat, null, cancellationToken);
+        return GetObjectStreamAsync(args, cancellationToken);
     }
 
     /// <summary>
     ///     private helper method. It returns the specified portion or full object from the bucket
     /// </summary>
     /// <param name="args">GetObjectArgs Arguments Object encapsulates information like - bucket name, object name etc </param>
-    /// <param name="objectStat">
-    ///     ObjectStat object encapsulates information like - object name, size, etag etc, represents
-    ///     Object Information
-    /// </param>
-    /// <param name="cb"> Action object of type Stream, callback to send Object contents, if assigned </param>
     /// <param name="cancellationToken">Optional cancellation token to cancel the operation</param>
-    private async Task GetObjectStreamAsync(GetObjectArgs args, ObjectStat objectStat, Action<Stream> cb,
-        CancellationToken cancellationToken = default)
+    private async Task GetObjectStreamAsync(GetObjectArgs args, CancellationToken cancellationToken = default)
     {
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    ///     private helper method. It returns the specified portion or full object from the bucket
-    /// </summary>
-    /// <param name="args">GetObjectArgs Arguments Object encapsulates information like - bucket name, object name etc </param>
-    /// <param name="objectStat">
-    ///     ObjectStat object encapsulates information like - object name, size, etag etc, represents
-    ///     Object Information
-    /// </param>
-    /// <param name="cb">
-    ///     Callback function to send/process Object contents using
-    ///     async Func object which takes Stream and CancellationToken as input
-    ///     and Task as output, if assigned
-    /// </param>
-    /// <param name="cancellationToken">Optional cancellation token to cancel the operation</param>
-    private async Task GetObjectStreamAsync(GetObjectArgs args, ObjectStat objectStat,
-        Func<Stream, CancellationToken, Task> cb,
-        CancellationToken cancellationToken = default)
-    {
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
-        using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -152,12 +128,13 @@ public partial class MinioClient
     /// <exception cref="BucketNotFoundException">When bucket is not found</exception>
     /// <exception cref="ObjectNotFoundException">When object is not found</exception>
     /// <exception cref="MalFormedXMLException">When configuration XML provided is invalid</exception>
-    private async Task<IList<DeleteError>> removeObjectsAsync(RemoveObjectsArgs args,
+    private async Task<IList<DeleteError>> RemoveBucketObjectsAsync(RemoveObjectsArgs args,
         CancellationToken cancellationToken)
     {
-        var requestMessageBuilder = await CreateRequest(args).ConfigureAwait(false);
+        var requestMessageBuilder = await this.CreateRequest(args).ConfigureAwait(false);
         using var response =
-            await ExecuteTaskAsync(NoErrorHandlers, requestMessageBuilder, cancellationToken: cancellationToken)
+            await this.ExecuteTaskAsync(ResponseErrorHandlers, requestMessageBuilder,
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         var removeObjectsResponse = new RemoveObjectsResponse(response.StatusCode, response.Content);
         return removeObjectsResponse.DeletedObjectsResult.ErrorList;
@@ -183,7 +160,7 @@ public partial class MinioClient
         var iterArgs = new RemoveObjectsArgs()
             .WithBucket(args.BucketName)
             .WithObjectsVersions(objVersions);
-        var errorsList = await removeObjectsAsync(iterArgs, cancellationToken).ConfigureAwait(false);
+        var errorsList = await RemoveBucketObjectsAsync(iterArgs, cancellationToken).ConfigureAwait(false);
         fullErrorsList.AddRange(errorsList);
         return fullErrorsList;
     }
@@ -209,7 +186,7 @@ public partial class MinioClient
         var iterArgs = new RemoveObjectsArgs()
             .WithBucket(args.BucketName)
             .WithObjects(objNames);
-        var errorsList = await removeObjectsAsync(iterArgs, cancellationToken).ConfigureAwait(false);
+        var errorsList = await RemoveBucketObjectsAsync(iterArgs, cancellationToken).ConfigureAwait(false);
         fullErrorsList.AddRange(errorsList);
         return fullErrorsList;
     }
@@ -313,36 +290,5 @@ public partial class MinioClient
             fullErrorsList = await CallRemoveObjects(args, iterObjects, fullErrorsList.ToList(), cancellationToken)
                 .ConfigureAwait(false);
         return fullErrorsList;
-    }
-}
-
-public static class OperationsUtil
-{
-    private static readonly List<string> SupportedHeaders = new()
-    {
-        "cache-control", "content-encoding", "content-type",
-        "x-amz-acl", "content-disposition", "x-minio-extract"
-    };
-
-    private static readonly List<string> SSEHeaders = new()
-    {
-        "X-Amz-Server-Side-Encryption-Customer-Algorithm",
-        "X-Amz-Server-Side-Encryption-Customer-Key",
-        "X-Amz-Server-Side-Encryption-Customer-Key-Md5",
-        Constants.SSEGenericHeader,
-        Constants.SSEKMSKeyId,
-        Constants.SSEKMSContext
-    };
-
-    internal static bool IsSupportedHeader(string hdr, IEqualityComparer<string> comparer = null)
-    {
-        comparer ??= StringComparer.OrdinalIgnoreCase;
-        return SupportedHeaders.Contains(hdr, comparer);
-    }
-
-    internal static bool IsSSEHeader(string hdr, IEqualityComparer<string> comparer = null)
-    {
-        comparer ??= StringComparer.OrdinalIgnoreCase;
-        return SSEHeaders.Contains(hdr, comparer);
     }
 }

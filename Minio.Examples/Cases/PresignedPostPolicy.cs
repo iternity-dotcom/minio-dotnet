@@ -15,12 +15,9 @@
  */
 
 using Minio.DataModel;
+using Minio.DataModel.Args;
 
 namespace Minio.Examples.Cases;
-
-public delegate PostPolicy DefaultPolicy(string bucketName,
-    string objectName,
-    DateTime expiration);
 
 public static class PresignedPostPolicy
 {
@@ -44,7 +41,7 @@ public static class PresignedPostPolicy
 
         var tuple = await client.PresignedPostPolicyAsync(form).ConfigureAwait(false);
         var curlCommand = "curl -k --insecure -X POST";
-        foreach (var pair in tuple.Item2) curlCommand = curlCommand + $" -F {pair.Key}={pair.Value}";
+        foreach (var pair in tuple.Item2) curlCommand += $" -F {pair.Key}={pair.Value}";
         curlCommand = curlCommand + " -F file=@/etc/issue " + tuple.Item1 + bucketName + "/";
     }
 }

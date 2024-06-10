@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-using Minio.DataModel;
+using Minio.DataModel.Args;
+using Minio.DataModel.Encryption;
 
 namespace Minio.Examples.Cases;
 
@@ -33,9 +34,7 @@ internal static class CopyObject
         {
             Console.WriteLine("Running example for API: CopyObjectAsync");
             var metaData = new Dictionary<string, string>
-            {
-                { "Test-Metadata", "Test  Test" }
-            };
+                (StringComparer.Ordinal) { { "Test-Metadata", "Test  Test" } };
             // Optionally pass copy conditions
             var cpSrcArgs = new CopySourceObjectArgs()
                 .WithBucket(fromBucketName)

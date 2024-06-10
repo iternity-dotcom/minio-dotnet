@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-using Minio.DataModel;
+using Minio.DataModel.Args;
+using Minio.DataModel.Notification;
 
 namespace Minio.Examples.Cases;
 
@@ -36,7 +37,7 @@ internal static class SetBucketNotification
                 .WithBucketNotificationConfiguration(notification);
 
             // Uncomment the code below and change Arn and event types to configure.
-            /* 
+            /*
             Arn topicArn = new Arn("aws", "sns", "us-west-1", "730234153608", "topicminio");
             TopicConfig topicConfiguration = new TopicConfig(topicArn);
             List<EventType> events = new List<EventType>(){ EventType.ObjectCreatedPut , EventType.ObjectCreatedCopy };

@@ -1,6 +1,8 @@
-# MinIO Client SDK for .NET  [![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io)
+# MinIO Client SDK for .NET  
 
 MinIO Client SDK provides higher level APIs for MinIO and Amazon S3 compatible cloud storage services.For a complete list of APIs and examples, please take a look at the [Dotnet Client API Reference](https://min.io/docs/minio/linux/developers/dotnet/API.html).This document assumes that you have a working VisualStudio development environment.
+
+[![Slack](https://slack.min.io/slack?type=svg)](https://slack.min.io) [![Github Actions](https://github.com/minio/minio-dotnet/actions/workflows/minio-dotnet.yml/badge.svg)](https://github.com/minio/minio-dotnet/actions) [![Nuget](https://img.shields.io/nuget/dt/Minio?logo=nuget&label=nuget&link=https%3A%2F%2Fwww.nuget.org%2Fpackages%2FMinio)](https://www.nuget.org/packages/Minio/) [![GitHub tag (with filter)](https://img.shields.io/github/v/tag/minio/minio-dotnet?label=latest%20release)](https://github.com/minio/minio-dotnet/releases)
 
 ## Install from NuGet
 To install [MinIO .NET package](https://www.nuget.org/packages/Minio/), run the following command in Nuget Package Manager Console.
@@ -8,6 +10,85 @@ To install [MinIO .NET package](https://www.nuget.org/packages/Minio/), run the 
 ```powershell
 PM> Install-Package Minio
 ```
+
+## MinIO Client Example for ASP.NET
+
+When using `AddMinio` to add Minio to your ServiceCollection, Minio will also use any custom Logging providers you've added, like Serilog to output traces when enabled.
+
+```cs
+using Minio;
+using Minio.DataModel.Args;
+
+public static class Program
+{
+    var endpoint = "play.min.io";
+    var accessKey = "minioadmin";
+    var secretKey = "minioadmin";
+
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder();
+
+        // Add Minio using the default endpoint
+        builder.Services.AddMinio(accessKey, secretKey);
+
+        // Add Minio using the custom endpoint and configure additional settings for default MinioClient initialization
+        builder.Services.AddMinio(configureClient => configureClient
+            .WithEndpoint(endpoint)
+            .WithCredentials(accessKey, secretKey)
+	    .Build());
+
+        // NOTE: SSL and Build are called by the build-in services already.
+
+        var app = builder.Build();
+        app.Run();
+    }
+}
+
+[ApiController]
+public class ExampleController : ControllerBase
+{
+    private readonly IMinioClient minioClient;
+
+    public ExampleController(IMinioClient minioClient)
+    {
+        this.minioClient = minioClient;
+    }
+
+    [HttpGet]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUrl(string bucketID)
+    {
+        return Ok(await minioClient.PresignedGetObjectAsync(new PresignedGetObjectArgs()
+                .WithBucket(bucketID))
+            .ConfigureAwait(false));
+    }
+}
+
+[ApiController]
+public class ExampleFactoryController : ControllerBase
+{
+    private readonly IMinioClientFactory minioClientFactory;
+
+    public ExampleFactoryController(IMinioClientFactory minioClientFactory)
+    {
+        this.minioClientFactory = minioClientFactory;
+    }
+
+    [HttpGet]
+    [ProducesResponseType(typeof(string), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUrl(string bucketID)
+    {
+        var minioClient = minioClientFactory.CreateClient(); //Has optional argument to configure specifics
+
+        return Ok(await minioClient.PresignedGetObjectAsync(new PresignedGetObjectArgs()
+                .WithBucket(bucketID))
+            .ConfigureAwait(false));
+    }
+}
+
+```
+
 ## MinIO Client Example
 To connect to an Amazon S3 compatible cloud storage service, you need the following information
 
@@ -24,11 +105,11 @@ The following examples uses a freely hosted public MinIO service "play.min.io" f
 using Minio;
 
 var endpoint = "play.min.io";
-var accessKey = "Q3AM3UQ867trueSPQQA43P2F";
-var secretKey = "zuf+tfteSlswRu7BJ86wtrueekitnifILbZam1KYY3TG";
+var accessKey = "minioadmin";
+var secretKey = "minioadmin";
 var secure = true;
 // Initialize the client with access credentials.
-private static MinioClient minio = new MinioClient()
+private static IMinioClient minio = new MinioClient()
                                     .WithEndpoint(endpoint)
                                     .WithCredentials(accessKey, secretKey)
                                     .WithSSL(secure)
@@ -44,6 +125,7 @@ foreach (var bucket in getListBucketsTask.Result.Buckets)
 }
 
 ```
+
 ## Complete _File Uploader_ Example
 
 This example program connects to an object storage server, creates a bucket and uploads a file to the bucket.
@@ -53,6 +135,8 @@ using System;
 using Minio;
 using Minio.Exceptions;
 using Minio.DataModel;
+using Minio.Credentials;
+using Minio.DataModel.Args;
 using System.Threading.Tasks;
 
 namespace FileUploader
@@ -62,8 +146,8 @@ namespace FileUploader
         static void Main(string[] args)
         {
             var endpoint  = "play.min.io";
-            var accessKey = "Q3AM3UQ867SPQQA43P2F";
-            var secretKey = "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG";
+            var accessKey = "minioadmin";
+            var secretKey = "minioadmin";
             try
             {
                 var minio = new MinioClient()
@@ -81,7 +165,7 @@ namespace FileUploader
         }
 
         // File uploader task.
-        private async static Task Run(MinioClient minio)
+        private async static Task Run(IMinioClient minio)
         {
             var bucketName = "mymusic";
             var location   = "us-east-1";

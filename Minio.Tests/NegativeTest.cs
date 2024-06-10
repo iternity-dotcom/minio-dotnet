@@ -17,6 +17,7 @@
 
 using System.Net;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Minio.DataModel.Args;
 using Minio.Exceptions;
 
 namespace Minio.Tests;
@@ -51,7 +52,7 @@ public class NegativeTest
             .Build();
         var args = new BucketExistsArgs()
             .WithBucket(badName);
-        await Assert
+        _ = await Assert
             .ThrowsExceptionAsync<InvalidBucketNameException>(async () =>
                 await minio.BucketExistsAsync(args).ConfigureAwait(false)).ConfigureAwait(false);
     }
@@ -80,7 +81,7 @@ public class NegativeTest
             var ex = await Assert.ThrowsExceptionAsync<InvalidObjectNameException>(
                 () => minio.StatObjectAsync(statObjArgs)).ConfigureAwait(false);
             for (var i = 0;
-                 i < tryCount && ex.ServerResponse?.StatusCode.Equals(HttpStatusCode.ServiceUnavailable) == true;
+                 i < tryCount && ex.ServerResponse?.StatusCode == HttpStatusCode.ServiceUnavailable;
                  ++i)
                 ex = await Assert.ThrowsExceptionAsync<InvalidObjectNameException>(
                     () => minio.StatObjectAsync(statObjArgs)).ConfigureAwait(false);

@@ -14,22 +14,22 @@
  * limitations under the License.
  */
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Web;
 using Minio.Exceptions;
-using Minio.Helper;
 
-namespace Minio;
+namespace Minio.Helper;
 
 internal static class RequestUtil
 {
     internal static Uri GetEndpointURL(string endPoint, bool secure)
     {
-        if (endPoint.Contains(':'))
+        if (endPoint.Contains(':', StringComparison.Ordinal))
         {
             var parts = endPoint.Split(':');
             var host = parts[0];
-            var port = parts[1];
+            //var port = parts[1];
             if (!S3utils.IsValidIP(host) && !IsValidEndpoint(host))
                 throw new InvalidEndpointException("Endpoint: " + endPoint +
                                                    " does not follow ip address or domain name standards.");
@@ -62,7 +62,7 @@ internal static class RequestUtil
         }
 
         var scheme = secure ? "https" : "http";
-        var endpointURL = string.Format("{0}://{1}", scheme, host);
+        var endpointURL = string.Format(CultureInfo.InvariantCulture, "{0}://{1}", scheme, host);
         return new Uri(endpointURL, UriKind.Absolute);
     }
 
@@ -71,7 +71,7 @@ internal static class RequestUtil
         var scheme = secure ? HttpUtility.UrlEncode("https") : HttpUtility.UrlEncode("http");
 
         // This is the actual url pointed to for all HTTP requests
-        var endpointURL = string.Format("{0}://{1}", scheme, endpoint);
+        var endpointURL = string.Format(CultureInfo.InvariantCulture, "{0}://{1}", scheme, endpoint);
         Uri uri;
         try
         {
@@ -91,7 +91,6 @@ internal static class RequestUtil
     internal static void ValidateEndpoint(Uri uri, string endpoint)
     {
         if (string.IsNullOrEmpty(uri.OriginalString)) throw new InvalidEndpointException("Endpoint cannot be empty.");
-        var host = uri.Host;
 
         if (!IsValidEndpoint(uri.Host)) throw new InvalidEndpointException(endpoint, "Invalid endpoint.");
         if (!uri.AbsolutePath.Equals("/", StringComparison.OrdinalIgnoreCase))
@@ -114,13 +113,14 @@ internal static class RequestUtil
         // endpoint may be a hostname
         // refer https://en.wikipedia.org/wiki/Hostname#Restrictions_on_valid_host_names
         // why checks are as shown below.
-        if (endpoint.Length < 1 || endpoint.Length > 253) return false;
+        if (endpoint.Length is < 1 or > 253) return false;
 
         foreach (var label in endpoint.Split('.'))
         {
-            if (label.Length < 1 || label.Length > 63) return false;
+            if (label.Length is < 1 or > 63) return false;
 
-            var validLabel = new Regex("^[a-zA-Z0-9]([A-Za-z0-9-_]*[a-zA-Z0-9])?$");
+            var validLabel = new Regex("^[a-zA-Z0-9]([A-Za-z0-9-_]*[a-zA-Z0-9])?$", RegexOptions.ExplicitCapture,
+                TimeSpan.FromHours(1));
 
             if (!validLabel.IsMatch(label)) return false;
         }

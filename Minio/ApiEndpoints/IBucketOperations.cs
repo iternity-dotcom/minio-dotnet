@@ -16,13 +16,17 @@
  */
 
 using Minio.DataModel;
+using Minio.DataModel.Args;
+using Minio.DataModel.Encryption;
 using Minio.DataModel.ILM;
+using Minio.DataModel.Notification;
 using Minio.DataModel.ObjectLock;
 using Minio.DataModel.Replication;
+using Minio.DataModel.Result;
 using Minio.DataModel.Tags;
 using Minio.Exceptions;
 
-namespace Minio;
+namespace Minio.ApiEndpoints;
 
 public interface IBucketOperations
 {
@@ -83,7 +87,7 @@ public interface IBucketOperations
     ///     For example, if you call ListObjectsAsync on a bucket with versioning
     ///     enabled or object lock enabled
     /// </exception>
-    IObservable<Item> ListObjectsAsync(ListObjectsArgs args, CancellationToken cancellationToken = default);
+    IAsyncEnumerable<Item> ListObjectsEnumAsync(ListObjectsArgs args, CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Gets notification configuration for this bucket
@@ -372,4 +376,13 @@ public interface IBucketOperations
     /// <exception cref="NotImplementedException">When a functionality or extension is not implemented</exception>
     /// <exception cref="BucketNotFoundException">When bucket is not found</exception>
     Task RemoveBucketReplicationAsync(RemoveBucketReplicationArgs args, CancellationToken cancellationToken = default);
+
+    Task<string> GetPolicyAsync(GetPolicyArgs args, CancellationToken cancellationToken = default);
+
+    IObservable<MinioNotificationRaw> ListenBucketNotificationsAsync(string bucketName, IList<EventType> events,
+        string prefix = "", string suffix = "", CancellationToken cancellationToken = default);
+
+    Task RemovePolicyAsync(RemovePolicyArgs args, CancellationToken cancellationToken = default);
+
+    Task SetPolicyAsync(SetPolicyArgs args, CancellationToken cancellationToken = default);
 }

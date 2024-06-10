@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+using Minio.DataModel.Args;
+
 namespace Minio.Examples.Cases;
 
 internal static class FPutObject
@@ -32,7 +34,7 @@ internal static class FPutObject
                 .WithObject(objectName)
                 .WithContentType("application/octet-stream")
                 .WithFileName(fileName);
-            await minio.PutObjectAsync(args).ConfigureAwait(false);
+            _ = await minio.PutObjectAsync(args).ConfigureAwait(false);
 
             Console.WriteLine($"Uploaded object {objectName} to bucket {bucketName}");
             Console.WriteLine();

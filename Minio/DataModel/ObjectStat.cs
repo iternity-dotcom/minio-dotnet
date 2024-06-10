@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Minio.DataModel.ObjectLock;
+using Minio.Helper;
 
 namespace Minio.DataModel;
 
@@ -33,15 +35,23 @@ public class ObjectStat
     public DateTime LastModified { get; private set; }
     public string ETag { get; private set; }
     public string ContentType { get; private set; }
+
+    [SuppressMessage("Design", "MA0016:Prefer returning collection abstraction instead of implementation",
+        Justification = "Needs to be concrete type for XML deserialization")]
     public Dictionary<string, string> MetaData { get; }
+
     public string VersionId { get; private set; }
     public bool DeleteMarker { get; private set; }
+
+    [SuppressMessage("Design", "MA0016:Prefer returning collection abstraction instead of implementation",
+        Justification = "Needs to be concrete type for XML deserialization")]
     public Dictionary<string, string> ExtraHeaders { get; }
+
     public uint? TaggingCount { get; private set; }
     public string ArchiveStatus { get; private set; }
     public DateTime? Expires { get; private set; }
     public string ReplicationStatus { get; }
-    public RetentionMode? ObjectLockMode { get; private set; }
+    public ObjectRetentionMode? ObjectLockMode { get; private set; }
     public DateTime? ObjectLockRetainUntilDate { get; private set; }
     public bool? LegalHoldEnabled { get; private set; }
 
@@ -51,23 +61,20 @@ public class ObjectStat
             throw new ArgumentNullException(nameof(objectName), "Name of an object cannot be empty");
         if (responseHeaders is null) throw new ArgumentNullException(nameof(responseHeaders));
 
-        var objInfo = new ObjectStat
-        {
-            ObjectName = objectName
-        };
+        var objInfo = new ObjectStat { ObjectName = objectName };
         foreach (var paramName in responseHeaders.Keys)
         {
             var paramValue = responseHeaders[paramName];
             switch (paramName.ToLowerInvariant())
             {
                 case "content-length":
-                    objInfo.Size = long.Parse(paramValue);
+                    objInfo.Size = long.Parse(paramValue, NumberStyles.Number, CultureInfo.InvariantCulture);
                     break;
                 case "last-modified":
                     objInfo.LastModified = DateTime.Parse(paramValue, CultureInfo.InvariantCulture);
                     break;
                 case "etag":
-                    objInfo.ETag = paramValue.Replace("\"", string.Empty);
+                    objInfo.ETag = paramValue.Replace("\"", string.Empty, StringComparison.OrdinalIgnoreCase);
                     break;
                 case "content-type":
                     objInfo.ContentType = paramValue;
@@ -83,7 +90,8 @@ public class ObjectStat
                     objInfo.ArchiveStatus = paramValue;
                     break;
                 case "x-amz-tagging-count":
-                    if (int.TryParse(paramValue, out var tagCount) && tagCount >= 0)
+                    if (int.TryParse(paramValue, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                            out var tagCount) && tagCount >= 0)
                         objInfo.TaggingCount = (uint)tagCount;
                     break;
                 case "x-amz-expiration":
@@ -91,26 +99,23 @@ public class ObjectStat
                     var expirationResponse = paramValue.Trim();
                     var expiryDatePattern =
                         @"(Sun|Mon|Tue|Wed|Thu|Fri|Sat), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} [A-Z]+";
-                    var expiryMatch = Regex.Match(expirationResponse, expiryDatePattern);
+                    var expiryMatch = Regex.Match(expirationResponse, expiryDatePattern, RegexOptions.None,
+                        TimeSpan.FromHours(1));
                     if (expiryMatch.Success)
-                        objInfo.Expires = DateTime.SpecifyKind(
-                            DateTime.Parse(expiryMatch.Value),
-                            DateTimeKind.Utc);
+                        objInfo.Expires = DateTime.Parse(expiryMatch.Value, CultureInfo.CurrentCulture);
 
                     break;
                 case "x-amz-object-lock-mode":
                     if (!string.IsNullOrWhiteSpace(paramValue))
                         objInfo.ObjectLockMode = paramValue.Equals("governance", StringComparison.OrdinalIgnoreCase)
-                            ? RetentionMode.GOVERNANCE
-                            : RetentionMode.COMPLIANCE;
+                            ? ObjectRetentionMode.GOVERNANCE
+                            : ObjectRetentionMode.COMPLIANCE;
 
                     break;
                 case "x-amz-object-lock-retain-until-date":
                     var lockUntilDate = paramValue;
                     if (!string.IsNullOrWhiteSpace(lockUntilDate))
-                        objInfo.ObjectLockRetainUntilDate = DateTime.SpecifyKind(
-                            DateTime.Parse(lockUntilDate),
-                            DateTimeKind.Utc);
+                        objInfo.ObjectLockRetainUntilDate = DateTime.Parse(lockUntilDate, CultureInfo.CurrentCulture);
 
                     break;
                 case "x-amz-object-lock-legal-hold":
@@ -122,7 +127,7 @@ public class ObjectStat
                     if (OperationsUtil.IsSupportedHeader(paramName))
                         objInfo.MetaData[paramName] = paramValue;
                     else if (paramName.StartsWith("x-amz-meta-", StringComparison.OrdinalIgnoreCase))
-                        objInfo.MetaData[paramName.Substring("x-amz-meta-".Length)] = paramValue;
+                        objInfo.MetaData[paramName["x-amz-meta-".Length..]] = paramValue;
                     else
                         objInfo.ExtraHeaders[paramName] = paramValue;
                     break;
@@ -151,7 +156,7 @@ public class ObjectStat
         if (ObjectLockMode is not null)
         {
             objectLockInfo = "ObjectLock Mode(" +
-                             (ObjectLockMode == RetentionMode.GOVERNANCE ? "GOVERNANCE" : "COMPLIANCE") + ")";
+                             (ObjectLockMode == ObjectRetentionMode.GOVERNANCE ? "GOVERNANCE" : "COMPLIANCE") + ")";
             objectLockInfo += " Retain Until Date(" + Utils.To8601String(ObjectLockRetainUntilDate.Value) + ")";
         }
 

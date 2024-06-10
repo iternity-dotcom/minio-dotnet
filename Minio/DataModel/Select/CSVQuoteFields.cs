@@ -16,7 +16,7 @@
 
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Select;
 
 [Serializable]
 public sealed class CSVQuoteFields
@@ -24,8 +24,6 @@ public sealed class CSVQuoteFields
     // Constants for csv quote styles.
     public static readonly CSVQuoteFields Always = new("Always");
     public static readonly CSVQuoteFields AsNeeded = new("AsNeeded");
-
-    [XmlText] public string QuoteFields;
 
     public CSVQuoteFields(string value)
     {
@@ -35,4 +33,6 @@ public sealed class CSVQuoteFields
     public CSVQuoteFields()
     {
     }
+
+    [XmlText] public string QuoteFields { get; set; }
 }

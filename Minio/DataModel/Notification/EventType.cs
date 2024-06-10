@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
+using System.Globalization;
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Notification;
 
 /// <summary>
 ///     EventType is a S3 notification event associated to the bucket notification configuration
@@ -42,20 +43,20 @@ public sealed class EventType
     public static readonly EventType ObjectRemovedDeleteMarkerCreated = new("s3:ObjectRemoved:DeleteMarkerCreated");
     public static readonly EventType ReducedRedundancyLostObject = new("s3:ReducedRedundancyLostObject");
 
-    [XmlText] public string value;
-
     private EventType()
     {
-        value = null;
+        Value = null;
     }
 
     public EventType(string value)
     {
-        this.value = value;
+        Value = value;
     }
+
+    [XmlText] public string Value { get; set; }
 
     public override string ToString()
     {
-        return string.Format("EventType= {0}", value);
+        return string.Format(CultureInfo.InvariantCulture, "EventType= {0}", Value);
     }
 }

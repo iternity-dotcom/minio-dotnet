@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage,
  * (C) 2021 MinIO, Inc.
  *
@@ -16,59 +16,24 @@
  */
 
 using System.Text;
-using System.Xml;
-using System.Xml.Serialization;
 using CommunityToolkit.HighPerformance;
 using Minio.DataModel;
+using Minio.DataModel.Result;
+using Minio.Exceptions;
+using Minio.Helper;
 
 namespace Minio.Credentials;
 
-[Serializable]
-[XmlRoot(ElementName = "AssumeRoleResponse", Namespace = "https://sts.amazonaws.com/doc/2011-06-15/")]
-public class AssumeRoleResponse
-{
-    [XmlElement(ElementName = "AssumeRoleResult")]
-    public AssumeRoleResult AssumeRole { get; set; }
-
-    public string ToXML()
-    {
-        var settings = new XmlWriterSettings
-        {
-            OmitXmlDeclaration = true
-        };
-        using var ms = new MemoryStream();
-        using var xmlWriter = XmlWriter.Create(ms, settings);
-        var names = new XmlSerializerNamespaces();
-        names.Add(string.Empty, "https://sts.amazonaws.com/doc/2011-06-15/");
-
-        var cs = new XmlSerializer(typeof(CertificateResponse));
-        cs.Serialize(xmlWriter, this, names);
-
-        ms.Flush();
-        ms.Seek(0, SeekOrigin.Begin);
-        using var streamReader = new StreamReader(ms);
-        return streamReader.ReadToEnd();
-    }
-}
-
-[Serializable]
-[XmlRoot(ElementName = "AssumeRoleResult")]
-public class AssumeRoleResult
-{
-    [XmlElement(ElementName = "Credentials")]
-    public AccessCredentials Credentials { get; set; }
-}
-
 public class AssumeRoleProvider : AssumeRoleBaseProvider<AssumeRoleProvider>
 {
-    private readonly string AssumeRole = "AssumeRole";
-    private readonly uint DefaultDurationInSeconds = 3600;
+    private readonly string assumeRole = "AssumeRole";
+    private readonly uint defaultDurationInSeconds = 3600;
 
     public AssumeRoleProvider()
     {
     }
 
-    public AssumeRoleProvider(MinioClient client) : base(client)
+    public AssumeRoleProvider(IMinioClient client) : base(client)
     {
     }
 
@@ -93,7 +58,7 @@ public class AssumeRoleProvider : AssumeRoleBaseProvider<AssumeRoleProvider>
         return this;
     }
 
-    public override async Task<AccessCredentials> GetCredentialsAsync()
+    public override async ValueTask<AccessCredentials> GetCredentialsAsync()
     {
         if (Credentials?.AreExpired() == false) return Credentials;
 
@@ -125,14 +90,14 @@ public class AssumeRoleProvider : AssumeRoleBaseProvider<AssumeRoleProvider>
             }
         }
 
-        throw new ArgumentNullException(nameof(Client) + " should have been assigned for the operation to continue.");
+        throw new InternalClientException("Client should have been assigned for the operation to continue.");
     }
 
     internal override async Task<HttpRequestMessageBuilder> BuildRequest()
     {
-        Action = AssumeRole;
+        Action = assumeRole;
         if (DurationInSeconds is null || DurationInSeconds.Value == 0)
-            DurationInSeconds = DefaultDurationInSeconds;
+            DurationInSeconds = defaultDurationInSeconds;
 
         var requestMessageBuilder = await Client.CreateRequest(HttpMethod.Post).ConfigureAwait(false);
 

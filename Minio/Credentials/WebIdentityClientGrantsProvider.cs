@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage,
  * (C) 2021 MinIO, Inc.
  *
@@ -15,18 +15,20 @@
  * limitations under the License.
  */
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using CommunityToolkit.HighPerformance;
 using Minio.DataModel;
+using Minio.Helper;
 
 namespace Minio.Credentials;
 
 public abstract class WebIdentityClientGrantsProvider<T> : AssumeRoleBaseProvider<T>
     where T : WebIdentityClientGrantsProvider<T>
 {
-    public readonly uint MAX_DURATION_SECONDS = (uint)new TimeSpan(7, 0, 0, 0).TotalSeconds;
-    public readonly uint MIN_DURATION_SECONDS = 15;
+    internal readonly uint MAX_DURATION_SECONDS = (uint)new TimeSpan(7, 0, 0, 0).TotalSeconds;
+    internal readonly uint MIN_DURATION_SECONDS = 15;
 
     internal Uri STSEndpoint { get; set; }
     internal Func<JsonWebToken> JWTSupplier { get; set; }
@@ -61,9 +63,9 @@ public abstract class WebIdentityClientGrantsProvider<T> : AssumeRoleBaseProvide
         // Stream receiveStream = response.Content.ReadAsStreamAsync();
         // StreamReader readStream = new StreamReader (receiveStream, Encoding.UTF8);
         // txtBlock.Text = readStream.ReadToEnd();
-        var content = Convert.ToString(response.Content);
+        var content = Convert.ToString(response.Content, CultureInfo.InvariantCulture);
         if (string.IsNullOrWhiteSpace(content) ||
-            !HttpStatusCode.OK.Equals(response.StatusCode))
+            HttpStatusCode.OK != response.StatusCode)
             throw new ArgumentNullException(nameof(response), "Unable to get credentials. Response error.");
 
         using var stream = Encoding.UTF8.GetBytes(content).AsMemory().AsStream();
@@ -73,7 +75,7 @@ public abstract class WebIdentityClientGrantsProvider<T> : AssumeRoleBaseProvide
     protected void Validate()
     {
         if (JWTSupplier is null)
-            throw new ArgumentNullException(nameof(JWTSupplier) + " JWT Token supplier cannot be null.");
+            throw new InvalidOperationException(nameof(JWTSupplier) + " JWT Token supplier cannot be null.");
         if (STSEndpoint is null || string.IsNullOrWhiteSpace(STSEndpoint.AbsoluteUri))
             throw new InvalidOperationException(nameof(STSEndpoint) + " value is invalid.");
     }

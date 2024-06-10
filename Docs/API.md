@@ -5,7 +5,7 @@
 ## MinIO
 
 ```cs
-MinioClient minioClient = new MinioClient()
+IMinioClient minioClient = new MinioClient()
                               .WithEndpoint("play.min.io")
                               .WithCredentials("Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG")
                               .WithSSL()
@@ -16,7 +16,7 @@ MinioClient minioClient = new MinioClient()
 
 
 ```cs
-MinioClient minioClient = new MinioClient()
+IIMinioClient minioClient = new MinioClient()
                               .WithEndpoint("s3.amazonaws.com")
                               .WithCredentials("YOUR-ACCESSKEYID", "YOUR-SECRETACCESSKEY")
                               .WithSSL()
@@ -113,13 +113,13 @@ __Examples__
 
 ```cs
 // 1. Using Builder with public MinioClient(), Endpoint, Credentials & Secure (HTTPS) connection
-MinioClient minioClient = new MinioClient()
+IMinioClient minioClient = new MinioClient()
                               .WithEndpoint("play.min.io")
                               .WithCredentials("Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG")
                               .WithSSL()
                               .Build()
 // 2. Using Builder with public MinioClient(), Endpoint, Credentials & Secure (HTTPS) connection
-MinioClient minioClient = new MinioClient()
+IMinioClient minioClient = new MinioClient()
                               .WithEndpoint("play.min.io", 9000, true)
                               .WithCredentials("Q3AM3UQ867SPQQA43P2F", "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG")
                               .WithSSL()
@@ -127,7 +127,7 @@ MinioClient minioClient = new MinioClient()
 
 // 3. Initializing minio client with proxy
 IWebProxy proxy = new WebProxy("192.168.0.1", 8000);
-MinioClient minioClient = new MinioClient()
+IMinioClient minioClient = new MinioClient()
                               .WithEndpoint("my-ip-address:9000")
                               .WithCredentials("minio", "minio123")
                               .WithSSL()
@@ -140,7 +140,7 @@ MinioClient minioClient = new MinioClient()
 
 ```cs
 // 1. Using Builder with public MinioClient(), Endpoint, Credentials, Secure (HTTPS) connection & proxy
-MinioClient s3Client = new MinioClient()
+IMinioClient s3Client = new MinioClient()
                            .WithEndpoint("s3.amazonaws.com")
                            .WithCredentials("YOUR-AWS-ACCESSKEYID", "YOUR-AWS-SECRETACCESSKEY")
                            .WithSSL()
@@ -1842,7 +1842,7 @@ __Parameters__
 
 | Param                 | Type                                 | Description                                                                                                                       |
 |:----------------------|:-------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|
-| ``args``              | _PutObjectArgs_                      | Arguments object - bucket name, object name, file name, object data stream, object size, content type, object metadata, SSE. etc. |
+| ``args``              | _PutObjectArgs_                      | Arguments object - bucket name, object name, file name, object data stream, object size, content type, object metadata, operation executing progress, SSE. etc. |
 | ``cancellationToken`` | _System.Threading.CancellationToken_ | Optional parameter. Defaults to default(CancellationToken)                                                                        |
 
 
@@ -1872,12 +1872,22 @@ try
     aesEncryption.KeySize = 256;
     aesEncryption.GenerateKey();
     var ssec = new SSEC(aesEncryption.Key);
+    var progress = new Progress<ProgressReport>(progressReport =>
+    {
+        // Progress events are delivered asynchronously (see remark below)
+        Console.WriteLine(
+                $"Percentage: {progressReport.Percentage}% TotalBytesTransferred: {progressReport.TotalBytesTransferred} bytes");
+        if (progressReport.Percentage != 100)
+            Console.SetCursorPosition(0, Console.CursorTop - 1);
+        else Console.WriteLine();
+    });
     PutObjectArgs putObjectArgs = new PutObjectArgs()
                                       .WithBucket("mybucket")
                                       .WithObject("island.jpg")
                                       .WithFilename("/mnt/photos/island.jpg")
                                       .WithContentType("application/octet-stream")
-                                      .WithServerSideEncryption(ssec);
+                                      .WithServerSideEncryption(ssec)
+                                      .WithProgress(progress);
     await minio.PutObjectAsync(putObjectArgs);
     Console.WriteLine("island.jpg is uploaded successfully");
 }
@@ -1886,7 +1896,14 @@ catch(MinioException e)
     Console.WriteLine("Error occurred: " + e);
 }
 ```
-
+**Remark:** 
+Note that the default [Progress<T> class](https://learn.microsoft.com/en-us/dotnet/api/System.Progress-1) post progress
+updates to the SynchronizationContext when the instance was constructed
+([source](https://learn.microsoft.com/en-us/dotnet/api/system.progress-1#remarks)). This means that progress updates are
+sent asynchronous. If you do want to receive the events synchronous, then use the `Minio.Helper.SyncProgress<T>` instead,
+but make sure you understand the implications. Progress events are sent synchronous, so they may be invoked on an
+arbitrary thread (mostly a problem for UI applications) and performing long-running and/or blocking operations will
+degrade upload performance.
 
 <a name="statObject"></a>
 ### StatObjectAsync(StatObjectArgs args)

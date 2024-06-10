@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2017 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,19 +14,20 @@
  * limitations under the License.
  */
 
+using System.Globalization;
 using System.Text;
 
 namespace Minio.DataModel;
 
 public class PostPolicy
 {
-    public IList<IList<(string, string, string)>> Conditions = new List<IList<(string, string, string)>>();
+    public IList<IList<(string, string, string)>> Conditions { get; } = new List<IList<(string, string, string)>>();
 
     /// <summary>
     ///     Get the populated dictionary of policy data.
     /// </summary>
     /// <returns>Dictionary of policy data</returns>
-    public IDictionary<string, string> FormData { get; } = new Dictionary<string, string>();
+    public IDictionary<string, string> FormData { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
     public DateTime Expiration { get; set; }
     public string Key { get; private set; }
@@ -131,7 +132,10 @@ public class PostPolicy
         if (contentLength <= 0) throw new ArgumentException("Negative Content length", nameof(contentLength));
 
         Conditions.Add(new List<(string, string, string)>
-            { ("content-length-range", contentLength.ToString(), contentLength.ToString()) });
+        {
+            ("content-length-range", contentLength.ToString(CultureInfo.InvariantCulture),
+                contentLength.ToString(CultureInfo.InvariantCulture))
+        });
     }
 
     /// <summary>
@@ -141,13 +145,17 @@ public class PostPolicy
     /// <param name="endRange"></param>
     public void SetContentRange(long startRange, long endRange)
     {
-        if (startRange < 0 || endRange < 0) throw new ArgumentException("Negative start or end range");
+        if (startRange < 0 || endRange < 0)
+            throw new ArgumentOutOfRangeException(nameof(endRange), "Negative start or end range");
 
         if (startRange > endRange)
             throw new ArgumentException("Start range is greater than end range", nameof(startRange));
 
         Conditions.Add(new List<(string, string, string)>
-            { ("content-length-range", startRange.ToString(), endRange.ToString()) });
+        {
+            ("content-length-range", startRange.ToString(CultureInfo.InvariantCulture),
+                endRange.ToString(CultureInfo.InvariantCulture))
+        });
     }
 
     /// <summary>
@@ -222,27 +230,9 @@ public class PostPolicy
     /// <param name="date">Set date for the policy</param>
     public void SetDate(DateTime date)
     {
-        var dateStr = date.ToString("yyyyMMddTHHmmssZ");
+        var dateStr = date.ToUniversalTime().ToString("yyyyMMddTHHmmssZ", CultureInfo.InvariantCulture);
         Conditions.Add(new List<(string, string, string)> { ("eq", "$x-amz-date", dateStr) });
         // this.formData.Add("x-amz-date", dateStr);
-    }
-
-    /// <summary>
-    ///     Set base64 encoded policy to form dictionary.
-    /// </summary>
-    /// <param name="policyBase64">Base64 encoded policy</param>
-    public void SetPolicy(string policyBase64)
-    {
-        // this.formData.Add("policy", policyBase64);
-    }
-
-    /// <summary>
-    ///     Set computed signature for the policy to form dictionary.
-    /// </summary>
-    /// <param name="signature">Computed signature</param>
-    public void SetSignature(string signature)
-    {
-        // this.formData.Add("x-amz-signature", signature);
     }
 
     /// <summary>
@@ -258,11 +248,13 @@ public class PostPolicy
 
         // expiration and policies will never be empty because of checks at PresignedPostPolicy()
         var sb = new StringBuilder();
-        sb.Append('{');
-        sb.Append("\"expiration\":\"").Append(Expiration.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")).Append('"')
+        _ = sb.Append('{');
+        _ = sb.Append("\"expiration\":\"")
+            .Append(Expiration.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture))
+            .Append('"')
             .Append(',');
-        sb.Append("\"conditions\":[").Append(string.Join(",", policyList)).Append(']');
-        sb.Append('}');
+        _ = sb.Append("\"conditions\":[").AppendJoin(",", policyList).Append(']');
+        _ = sb.Append('}');
         return Encoding.UTF8.GetBytes(sb.ToString());
     }
 
@@ -312,8 +304,6 @@ public class PostPolicy
     /// <returns>true if expiration is set</returns>
     public bool IsExpirationSet()
     {
-        if (!string.IsNullOrEmpty(Expiration.ToString())) return true;
-
-        return false;
+        return !string.IsNullOrEmpty(Expiration.ToString(CultureInfo.InvariantCulture));
     }
 }

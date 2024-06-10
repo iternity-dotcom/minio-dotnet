@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using CommunityToolkit.HighPerformance;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Minio.DataModel.Args;
 using Minio.Exceptions;
 
 namespace Minio.Tests;
@@ -26,7 +27,7 @@ public class OperationsTest
                 .WithBucket(bucket)
                 .WithObject(objectName)
                 .WithCallbackStream(stream => { });
-            await client.GetObjectAsync(getObjectArgs).ConfigureAwait(false);
+            _ = await client.GetObjectAsync(getObjectArgs).ConfigureAwait(false);
 
             return true;
         }
@@ -68,7 +69,7 @@ public class OperationsTest
                 .WithObject(objectName)
                 .WithStreamData(helloStream)
                 .WithObjectSize(helloData.Length);
-            await client.PutObjectAsync(PutObjectArgs).ConfigureAwait(false);
+            _ = await client.PutObjectAsync(PutObjectArgs).ConfigureAwait(false);
         }
 
         var presignedGetObjectArgs = new PresignedGetObjectArgs()
@@ -97,9 +98,7 @@ public class OperationsTest
         var objectName = "object-name";
 
         var reqParams = new Dictionary<string, string>
-        {
-            { "Response-Content-Disposition", "attachment; filename=\"filename.jpg\"" }
-        };
+            (StringComparer.Ordinal) { { "Response-Content-Disposition", "attachment; filename=\"filename.jpg\"" } };
 
         var bktExistArgs = new BucketExistsArgs()
             .WithBucket(bucket);
@@ -120,7 +119,7 @@ public class OperationsTest
                 .WithObject(objectName)
                 .WithStreamData(helloStream)
                 .WithObjectSize(helloData.Length);
-            await client.PutObjectAsync(PutObjectArgs).ConfigureAwait(false);
+            _ = await client.PutObjectAsync(PutObjectArgs).ConfigureAwait(false);
         }
 
         var presignedGetObjectArgs = new PresignedGetObjectArgs()

@@ -16,6 +16,7 @@
  */
 
 using Minio.Credentials;
+using Minio.DataModel.Args;
 using Minio.Exceptions;
 
 namespace Minio.Examples.Cases;
@@ -41,11 +42,11 @@ public static class AWSEnvironmentProviderExample
         }
         catch (MinioException me)
         {
-            Console.WriteLine($"[Bucket] IAMAWSProviderExample example case encountered Exception: {me}");
+            Console.WriteLine($"[Bucket] AWSEnvironmentProviderExample example case encountered MinioException: {me}");
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[Bucket] IAMAWSProviderExample example case encountered Exception: {e}");
+            Console.WriteLine($"[Bucket] AWSEnvironmentProviderExample example case encountered Exception: {e}");
         }
     }
 }

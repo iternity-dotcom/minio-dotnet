@@ -16,7 +16,7 @@
 
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Notification;
 
 /// <summary>
 ///     LambdaConfig carries one single cloudfunction notification configuration
@@ -54,6 +54,6 @@ public class LambdaConfig : NotificationConfiguration
 
     public override int GetHashCode()
     {
-        return Lambda.GetHashCode();
+        return StringComparer.Ordinal.GetHashCode(Lambda);
     }
 }

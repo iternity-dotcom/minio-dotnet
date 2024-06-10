@@ -15,7 +15,7 @@
  */
 
 using System.ComponentModel;
-using System.Dynamic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -25,21 +25,25 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Serialization;
+using Minio.DataModel;
 using Minio.Exceptions;
-using Minio.Helper;
+#if !NET6_0_OR_GREATER
+using System.Collections.Concurrent;
+#endif
 
-namespace Minio;
+namespace Minio.Helper;
 
 public static class Utils
 {
     // We support '.' with bucket names but we fallback to using path
     // style requests instead for such buckets.
-    private static readonly Regex validBucketName = new("^[a-z0-9][a-z0-9\\.\\-]{1,61}[a-z0-9]$");
+    private static readonly Regex validBucketName =
+        new("^[a-z0-9][a-z0-9\\.\\-]{1,61}[a-z0-9]$", RegexOptions.None, TimeSpan.FromHours(1));
 
     // Invalid bucket name with double dot.
-    private static readonly Regex invalidDotBucketName = new("`/./.");
+    private static readonly Regex invalidDotBucketName = new("`/./.", RegexOptions.None, TimeSpan.FromHours(1));
 
-    private static readonly Lazy<IDictionary<string, string>> _contentTypeMap = new(AddContentTypeMappings);
+    private static readonly Lazy<IDictionary<string, string>> contentTypeMap = new(AddContentTypeMappings);
 
     /// <summary>
     ///     IsValidBucketName - verify bucket name in accordance with
@@ -54,9 +58,9 @@ public static class Utils
             throw new InvalidBucketNameException(bucketName, "Bucket name cannot be smaller than 3 characters.");
         if (bucketName.Length > 63)
             throw new InvalidBucketNameException(bucketName, "Bucket name cannot be greater than 63 characters.");
-        if (bucketName[0] == '.' || bucketName[bucketName.Length - 1] == '.')
+        if (bucketName[0] == '.' || bucketName[^1] == '.')
             throw new InvalidBucketNameException(bucketName, "Bucket name cannot start or end with a '.' dot.");
-        if (bucketName.Any(c => char.IsUpper(c)))
+        if (bucketName.Any(char.IsUpper))
             throw new InvalidBucketNameException(bucketName, "Bucket name cannot have upper case characters");
         if (invalidDotBucketName.IsMatch(bucketName))
             throw new InvalidBucketNameException(bucketName, "Bucket name cannot have successive periods.");
@@ -88,33 +92,33 @@ public static class Utils
     {
         // The following characters are not allowed on the server side
         // '-', '_', '.', '/', '*'
-        return Uri.EscapeDataString(input).Replace("\\!", "%21")
-            .Replace("\\\"", "%22")
-            .Replace("\\#", "%23")
-            .Replace("\\$", "%24")
-            .Replace("\\%", "%25")
-            .Replace("\\&", "%26")
-            .Replace("\\'", "%27")
-            .Replace("\\(", "%28")
-            .Replace("\\)", "%29")
-            .Replace("\\+", "%2B")
-            .Replace("\\,", "%2C")
-            .Replace("\\:", "%3A")
-            .Replace("\\;", "%3B")
-            .Replace("\\<", "%3C")
-            .Replace("\\=", "%3D")
-            .Replace("\\>", "%3E")
-            .Replace("\\?", "%3F")
-            .Replace("\\@", "%40")
-            .Replace("\\[", "%5B")
-            .Replace("\\\\", "%5C")
-            .Replace("\\]", "%5D")
-            .Replace("\\^", "%5E")
-            .Replace("\\'", "%60")
-            .Replace("\\{", "%7B")
-            .Replace("\\|", "%7C")
-            .Replace("\\}", "%7D")
-            .Replace("\\~", "%7E");
+        return Uri.EscapeDataString(input).Replace("\\!", "%21", StringComparison.Ordinal)
+            .Replace("\\\"", "%22", StringComparison.Ordinal)
+            .Replace("\\#", "%23", StringComparison.Ordinal)
+            .Replace("\\$", "%24", StringComparison.Ordinal)
+            .Replace("\\%", "%25", StringComparison.Ordinal)
+            .Replace("\\&", "%26", StringComparison.Ordinal)
+            .Replace("\\'", "%27", StringComparison.Ordinal)
+            .Replace("\\(", "%28", StringComparison.Ordinal)
+            .Replace("\\)", "%29", StringComparison.Ordinal)
+            .Replace("\\+", "%2B", StringComparison.Ordinal)
+            .Replace("\\,", "%2C", StringComparison.Ordinal)
+            .Replace("\\:", "%3A", StringComparison.Ordinal)
+            .Replace("\\;", "%3B", StringComparison.Ordinal)
+            .Replace("\\<", "%3C", StringComparison.Ordinal)
+            .Replace("\\=", "%3D", StringComparison.Ordinal)
+            .Replace("\\>", "%3E", StringComparison.Ordinal)
+            .Replace("\\?", "%3F", StringComparison.Ordinal)
+            .Replace("\\@", "%40", StringComparison.Ordinal)
+            .Replace("\\[", "%5B", StringComparison.Ordinal)
+            .Replace("\\\\", "%5C", StringComparison.Ordinal)
+            .Replace("\\]", "%5D", StringComparison.Ordinal)
+            .Replace("\\^", "%5E", StringComparison.Ordinal)
+            .Replace("\\'", "%60", StringComparison.Ordinal)
+            .Replace("\\{", "%7B", StringComparison.Ordinal)
+            .Replace("\\|", "%7C", StringComparison.Ordinal)
+            .Replace("\\}", "%7D", StringComparison.Ordinal)
+            .Replace("\\~", "%7E", StringComparison.Ordinal);
     }
 
     // Return encoded path where extra "/" are trimmed off.
@@ -124,12 +128,12 @@ public static class Utils
         foreach (var pathSegment in path.Split('/'))
             if (pathSegment.Length != 0)
             {
-                if (encodedPathBuf.Length > 0) encodedPathBuf.Append('/');
-                encodedPathBuf.Append(UrlEncode(pathSegment));
+                if (encodedPathBuf.Length > 0) _ = encodedPathBuf.Append('/');
+                _ = encodedPathBuf.Append(UrlEncode(pathSegment));
             }
 
-        if (path.StartsWith("/", StringComparison.OrdinalIgnoreCase)) encodedPathBuf.Insert(0, '/');
-        if (path.EndsWith("/", StringComparison.OrdinalIgnoreCase)) encodedPathBuf.Append('/');
+        if (path.StartsWith("/", StringComparison.OrdinalIgnoreCase)) _ = encodedPathBuf.Insert(0, '/');
+        if (path.EndsWith("/", StringComparison.OrdinalIgnoreCase)) _ = encodedPathBuf.Append('/');
         return encodedPathBuf.ToString();
     }
 
@@ -138,7 +142,7 @@ public static class Utils
         return string.IsNullOrEmpty(secretKey) && string.IsNullOrEmpty(accessKey);
     }
 
-    internal static void ValidateFile(string filePath, string contentType = null)
+    internal static void ValidateFile(string filePath)
     {
         if (string.IsNullOrEmpty(filePath))
             throw new ArgumentException("empty file name is not allowed", nameof(filePath));
@@ -151,8 +155,6 @@ public static class Utils
             if (attr.HasFlag(FileAttributes.Directory))
                 throw new ArgumentException($"'{fileName}': not a regular file", nameof(filePath));
         }
-
-        contentType ??= GetContentType(filePath);
     }
 
     internal static string GetContentType(string fileName)
@@ -168,7 +170,7 @@ public static class Utils
 
         if (string.IsNullOrEmpty(extension)) return "application/octet-stream";
 
-        return _contentTypeMap.Value.TryGetValue(extension, out var contentType)
+        return contentTypeMap.Value.TryGetValue(extension, out var contentType)
             ? contentType
             : "application/octet-stream";
     }
@@ -193,7 +195,52 @@ public static class Utils
 
         if (l1 is null) return false;
 
-        return !l2.Except(l1).Any();
+        return !l2.Except(l1, StringComparer.Ordinal).Any();
+    }
+
+    public static async Task ForEachAsync<TSource>(this IEnumerable<TSource> source, bool runInParallel = false,
+        int maxNoOfParallelProcesses = 4) where TSource : Task
+    {
+        if (source is null) throw new ArgumentNullException(nameof(source));
+
+        try
+        {
+            if (runInParallel)
+            {
+#if NET6_0_OR_GREATER
+                ParallelOptions parallelOptions = new()
+                {
+                    MaxDegreeOfParallelism
+                        = maxNoOfParallelProcesses
+                };
+                await Parallel.ForEachAsync(source, parallelOptions,
+                    async (task, cancellationToken) => await task.ConfigureAwait(false)).ConfigureAwait(false);
+#else
+                await Task.WhenAll(Partitioner.Create(source).GetPartitions(maxNoOfParallelProcesses)
+                    .Select(partition => Task.Run(async delegate
+                        {
+#pragma warning disable IDISP007 // Don't dispose injected
+                            using (partition)
+                            {
+                                while (partition.MoveNext())
+                                    await partition.Current.ConfigureAwait(false);
+                            }
+#pragma warning restore IDISP007 // Don't dispose injected
+                        }
+                    ))).ConfigureAwait(false);
+#endif
+            }
+            else
+            {
+                foreach (var task in source) await task.ConfigureAwait(false);
+            }
+        }
+        catch (AggregateException ae)
+        {
+            foreach (var ex in ae.Flatten().InnerExceptions)
+                // Handle or log the individual exception 'ex'
+                Console.WriteLine($"Exception occurred: {ex.Message}");
+        }
     }
 
     public static bool CaseInsensitiveContains(string text, string value,
@@ -201,11 +248,8 @@ public static class Utils
     {
         if (string.IsNullOrEmpty(text))
             throw new ArgumentException($"'{nameof(text)}' cannot be null or empty.", nameof(text));
-#if NETSTANDARD
-        return text.IndexOf(value, stringComparison) >= 0;
-#else
+
         return text.Contains(value, stringComparison);
-#endif
     }
 
     /// <summary>
@@ -214,7 +258,7 @@ public static class Utils
     /// <param name="size"></param>
     /// <param name="copy"> If true, use COPY part size, else use PUT part size</param>
     /// <returns></returns>
-    public static object CalculateMultiPartSize(long size, bool copy = false)
+    public static MultiPartInfo CalculateMultiPartSize(long size, bool copy = false)
     {
         if (size == -1) size = Constants.MaximumStreamObjectSize;
 
@@ -226,12 +270,9 @@ public static class Utils
         var minPartSize = copy ? Constants.MinimumCOPYPartSize : Constants.MinimumPUTPartSize;
         partSize = (double)Math.Ceiling((decimal)partSize / minPartSize) * minPartSize;
         var partCount = Math.Ceiling(size / partSize);
-        var lastPartSize = size - (partCount - 1) * partSize;
-        dynamic obj = new ExpandoObject();
-        obj.partSize = partSize;
-        obj.partCount = partCount;
-        obj.lastPartSize = lastPartSize;
-        return obj;
+        var lastPartSize = size - ((partCount - 1) * partSize);
+
+        return new MultiPartInfo { PartSize = partSize, PartCount = partCount, LastPartSize = lastPartSize };
     }
 
     /// <summary>
@@ -247,15 +288,20 @@ public static class Utils
     internal static string GetMD5SumStr(ReadOnlySpan<byte> key)
     {
 #if NETSTANDARD
-        using var md5 = MD5.Create();
-        var hashedBytes = md5.ComputeHash(key.ToArray());
+#pragma warning disable CA5351 // Do Not Use Broken Cryptographic Algorithms
+        using var md5
+            = MD5.Create();
+#pragma warning restore CA5351 // Do Not Use Broken Cryptographic Algorithms
+        var hashedBytes
+            = md5.ComputeHash(key.ToArray());
 #else
-        var hashedBytes = MD5.HashData(key);
+        ReadOnlySpan<byte> hashedBytes = MD5.HashData(key);
 #endif
         return Convert.ToBase64String(hashedBytes);
     }
 
-    private static IDictionary<string, string> AddContentTypeMappings()
+    [SuppressMessage("Design", "MA0051:Method is too long", Justification = "One time list of type mappings")]
+    private static Dictionary<string, string> AddContentTypeMappings()
     {
         return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -821,10 +867,7 @@ public static class Utils
 
         try
         {
-            var settings = new XmlWriterSettings
-            {
-                OmitXmlDeclaration = true
-            };
+            var settings = new XmlWriterSettings { OmitXmlDeclaration = true };
             var ns = new XmlSerializerNamespaces();
             ns.Add("", nmspc);
 
@@ -841,7 +884,7 @@ public static class Utils
         }
         finally
         {
-            xw?.Close();
+            xw.Close();
         }
 
         return str;
@@ -849,7 +892,7 @@ public static class Utils
 
     public static string To8601String(DateTime dt)
     {
-        return dt.ToString("yyyy-MM-dd'T'HH:mm:ssZ", CultureInfo.InvariantCulture);
+        return dt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ssZ", CultureInfo.InvariantCulture);
     }
 
     public static string RemoveNamespaceInXML(string config)
@@ -860,14 +903,15 @@ public static class Utils
             RegexOptions.Multiline;
         var patternToReplace =
             @"<\w+\s+\w+:nil=""true""(\s+xmlns:\w+=""http://www.w3.org/2001/XMLSchema-instance"")?\s*/>";
-        var patternToMatch = @"<\w+\s+xmlns=""http://s3.amazonaws.com/doc/2006-03-01/""\s*>";
-        if (Regex.Match(config, patternToMatch, regexOptions).Success)
+        const string patternToMatch = @"<\w+\s+xmlns=""http://s3.amazonaws.com/doc/2006-03-01/""\s*>";
+        if (Regex.Match(config, patternToMatch, regexOptions, TimeSpan.FromHours(1)).Success)
             patternToReplace = @"xmlns=""http://s3.amazonaws.com/doc/2006-03-01/""\s*";
         return Regex.Replace(
             config,
             patternToReplace,
             string.Empty,
-            regexOptions
+            regexOptions,
+            TimeSpan.FromHours(1)
         );
     }
 
@@ -880,18 +924,21 @@ public static class Utils
     {
         if (string.IsNullOrEmpty(endpoint))
             throw new ArgumentException(
-                string.Format("{0} is the value of the endpoint. It can't be null or empty.", endpoint),
+                string.Format(CultureInfo.InvariantCulture,
+                    "{0} is the value of the endpoint. It can't be null or empty.", endpoint),
                 nameof(endpoint));
 
         if (endpoint.EndsWith("/", StringComparison.OrdinalIgnoreCase))
-            endpoint = endpoint.Substring(0, endpoint.Length - 1);
+            endpoint = endpoint[..^1];
         if (!endpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase) &&
             !BuilderUtil.IsValidHostnameOrIPAddress(endpoint))
-            throw new InvalidEndpointException(string.Format("{0} is invalid hostname.", endpoint), "endpoint");
+            throw new InvalidEndpointException(
+                string.Format(CultureInfo.InvariantCulture, "{0} is invalid hostname.", endpoint), "endpoint");
         string conn_url;
         if (endpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             throw new InvalidEndpointException(
-                string.Format("{0} the value of the endpoint has the scheme (http/https) in it.", endpoint),
+                string.Format(CultureInfo.InvariantCulture,
+                    "{0} the value of the endpoint has the scheme (http/https) in it.", endpoint),
                 "endpoint");
 
         var enable_https = Environment.GetEnvironmentVariable("ENABLE_HTTPS");
@@ -900,7 +947,8 @@ public static class Utils
         var url = new Uri(conn_url);
         var hostnameOfUri = url.Authority;
         if (!string.IsNullOrWhiteSpace(hostnameOfUri) && !BuilderUtil.IsValidHostnameOrIPAddress(hostnameOfUri))
-            throw new InvalidEndpointException(string.Format("{0}, {1} is invalid hostname.", endpoint, hostnameOfUri),
+            throw new InvalidEndpointException(
+                string.Format(CultureInfo.InvariantCulture, "{0}, {1} is invalid hostname.", endpoint, hostnameOfUri),
                 "endpoint");
 
         return url;
@@ -948,7 +996,10 @@ public static class Utils
                      .GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
         {
             var value = prop.GetValue(obj, Array.Empty<object>());
-            Console.WriteLine("DEBUG >>   {0} = {1}", prop.Name, value);
+            if (string.Equals(prop.Name, "Headers", StringComparison.Ordinal))
+                PrintDict((Dictionary<string, string>)value);
+            else
+                Console.WriteLine("DEBUG >>   {0} = {1}", prop.Name, value);
         }
 
         Console.WriteLine("DEBUG >>   Print is DONE!\n\n");
@@ -958,9 +1009,9 @@ public static class Utils
     {
         if (d is not null)
             foreach (var kv in d)
-                Console.WriteLine("DEBUG >>        {0} = {1}", kv.Key, kv.Value);
+                Console.WriteLine("DEBUG >>             Dictionary({0} => {1})", kv.Key, kv.Value);
 
-        Console.WriteLine("DEBUG >>   Done printing\n");
+        Console.WriteLine("DEBUG >>             Dictionary: Done printing\n");
     }
 
     public static string DetermineNamespace(XDocument document)
@@ -984,56 +1035,69 @@ public static class Utils
         return sw.ToString();
     }
 
-    public static T DeserializeXml<T>(Stream stream) where T : class
+    public static T DeserializeXml<T>(Stream stream) where T : class, new()
     {
-        try
-        {
-            var ns = GetNamespace<T>();
-            if (!string.IsNullOrWhiteSpace(ns) && ns is "http://s3.amazonaws.com/doc/2006-03-01/")
-            {
-                using var amazonAwsS3XmlReader = new AmazonAwsS3XmlReader(stream);
-                return (T)new XmlSerializer(typeof(T)).Deserialize(amazonAwsS3XmlReader);
-            }
+        if (stream == null || stream.Length == 0) return default;
 
-            return (T)new XmlSerializer(typeof(T)).Deserialize(stream);
-        }
-        catch (Exception)
+        var ns = GetNamespace<T>();
+        if (!string.IsNullOrWhiteSpace(ns) && string.Equals(ns, "http://s3.amazonaws.com/doc/2006-03-01/",
+                StringComparison.OrdinalIgnoreCase))
         {
+            using var amazonAwsS3XmlReader = new AmazonAwsS3XmlReader(stream);
+            return (T)new XmlSerializer(typeof(T)).Deserialize(amazonAwsS3XmlReader);
         }
 
-        return default;
+        using var reader = new StreamReader(stream);
+        var xmlContent = reader.ReadToEnd();
+
+        return DeserializeXml<T>(xmlContent); // Call the string overload
     }
 
-    public static T DeserializeXml<T>(string xml) where T : class
+    public static T DeserializeXml<T>(string xml) where T : class, new()
     {
-        try
+        if (string.IsNullOrEmpty(xml)) return default;
+
+        var settings = new XmlReaderSettings
         {
-            var serializer = new XmlSerializer(typeof(T));
-            using var stringReader = new StringReader(xml);
-            return (T)serializer.Deserialize(stringReader);
-        }
-        catch (Exception)
+            // Disable DTD processing
+            DtdProcessing = DtdProcessing.Prohibit,
+            // Disable XML schema validation
+            XmlResolver = null
+        };
+
+        var xRoot = (XmlRootAttribute)typeof(T).GetCustomAttributes(typeof(XmlRootAttribute), true).FirstOrDefault();
+
+        var serializer = new XmlSerializer(typeof(T), xRoot);
+
+        using var stringReader = new StringReader(xml);
+        using var xmlReader = XmlReader.Create(stringReader, settings);
+        if (xml.Contains("<Error><Code>", StringComparison.Ordinal))
         {
+            // Skip the first line
+            xml = xml[(xml.IndexOf('\n', StringComparison.Ordinal) + 1)..];
+            stringReader.Dispose();
+            using var stringReader1 = new StringReader(xml);
+            xRoot = new XmlRootAttribute { ElementName = "Error", IsNullable = true };
+            serializer = new XmlSerializer(typeof(T), xRoot);
+            return (T)serializer.Deserialize(new NamespaceIgnorantXmlTextReader(stringReader1));
         }
 
-        return default;
+        return (T)serializer.Deserialize(xmlReader);
     }
 
     private static string GetNamespace<T>()
     {
-        if (typeof(T).GetCustomAttributes(typeof(XmlRootAttribute), true)
-                .FirstOrDefault() is XmlRootAttribute xmlRootAttribute)
-            return xmlRootAttribute.Namespace;
-
-        return null;
+        return typeof(T).GetCustomAttributes(typeof(XmlRootAttribute), true)
+            .FirstOrDefault() is XmlRootAttribute xmlRootAttribute
+            ? xmlRootAttribute.Namespace
+            : null;
     }
-}
 
-public class AmazonAwsS3XmlReader : XmlTextReader
-{
-    public AmazonAwsS3XmlReader(Stream stream) : base(stream)
+    // Class to ignore namespaces when de-serializing
+    public class NamespaceIgnorantXmlTextReader : XmlTextReader
     {
-    }
+        public NamespaceIgnorantXmlTextReader(TextReader reader) : base(reader) { }
 
-    public override string NamespaceURI => "http://s3.amazonaws.com/doc/2006-03-01/";
+        public override string NamespaceURI => string.Empty;
+    }
 }

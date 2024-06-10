@@ -16,15 +16,13 @@
 
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Select;
 
 [Serializable]
 public sealed class QueryExpressionType
 {
     // Constants for compression types under select API.
     public static readonly QueryExpressionType SQL = new("SQL");
-
-    [XmlText] public string ExpressionType;
 
     public QueryExpressionType()
     {
@@ -34,4 +32,6 @@ public sealed class QueryExpressionType
     {
         ExpressionType = value;
     }
+
+    [XmlText] public string ExpressionType { get; set; }
 }

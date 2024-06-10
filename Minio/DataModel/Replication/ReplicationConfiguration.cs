@@ -1,4 +1,4 @@
-/*
+﻿/*
  * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2021 MinIO, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Xml;
 using System.Xml.Serialization;
+using Minio.Helper;
 
 /*
  * ReplicationConfiguration class used as a container for replication rules. Max number of rules is 100. Size of configuration allowed is 2MB.
@@ -37,18 +38,18 @@ public class ReplicationConfiguration
     {
     }
 
-    public ReplicationConfiguration(string role, Collection<ReplicationRule> rules)
+    public ReplicationConfiguration(string role, ICollection<ReplicationRule> rules)
     {
         if (string.IsNullOrEmpty(role) || string.IsNullOrWhiteSpace(role))
-            throw new ArgumentNullException(nameof(role) + " member cannot be empty.");
+            throw new ArgumentNullException(nameof(role), nameof(role) + " member cannot be empty.");
         if (rules is null || rules.Count == 0)
-            throw new ArgumentNullException(nameof(rules) + " member cannot be an empty list.");
+            throw new ArgumentNullException(nameof(rules), nameof(rules) + " member cannot be an empty list.");
         if (rules.Count >= 1000)
-            throw new ArgumentOutOfRangeException(
+            throw new ArgumentOutOfRangeException(nameof(rules),
                 nameof(rules) + " Count of rules cannot exceed maximum limit of 1000.");
 
         Role = role;
-        Rules = rules;
+        Rules = (Collection<ReplicationRule>)rules;
     }
 
     [XmlElement("Role")] public string Role { get; set; }
@@ -63,10 +64,7 @@ public class ReplicationConfiguration
 
         try
         {
-            var settings = new XmlWriterSettings
-            {
-                OmitXmlDeclaration = true
-            };
+            var settings = new XmlWriterSettings { OmitXmlDeclaration = true };
             var ns = new XmlSerializerNamespaces();
             ns.Add(string.Empty, string.Empty);
 
@@ -78,7 +76,8 @@ public class ReplicationConfiguration
                 xs.Serialize(xw, this, ns);
                 xw.Flush();
 
-                str = Utils.RemoveNamespaceInXML(sw.ToString()).Replace("\r", "").Replace("\n", "");
+                str = Utils.RemoveNamespaceInXML(sw.ToString()).Replace("\r", "", StringComparison.OrdinalIgnoreCase)
+                    .Replace("\n", "", StringComparison.OrdinalIgnoreCase);
             }
         }
         catch (Exception ex)

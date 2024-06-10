@@ -15,10 +15,11 @@
  * limitations under the License.
  */
 
+using System.Globalization;
 using System.Text;
-using System.Xml.Serialization;
 using CommunityToolkit.HighPerformance;
 using Minio.DataModel;
+using Minio.Helper;
 
 /*
  * Web Identity Credential provider
@@ -26,13 +27,6 @@ using Minio.DataModel;
  */
 
 namespace Minio.Credentials;
-
-[Serializable]
-[XmlRoot(ElementName = "AssumeRoleWithWebIdentityResponse")]
-public class WebIdentityResponse
-{
-    [XmlElement("Credentials")] public AccessCredentials Credentials { get; set; }
-}
 
 public class WebIdentityProvider : WebIdentityClientGrantsProvider<WebIdentityProvider>
 {
@@ -45,7 +39,7 @@ public class WebIdentityProvider : WebIdentityClientGrantsProvider<WebIdentityPr
         return base.GetCredentials();
     }
 
-    public override Task<AccessCredentials> GetCredentialsAsync()
+    public override ValueTask<AccessCredentials> GetCredentialsAsync()
     {
         Validate();
         return base.GetCredentialsAsync();
@@ -63,8 +57,8 @@ public class WebIdentityProvider : WebIdentityClientGrantsProvider<WebIdentityPr
         Validate();
         CurrentJsonWebToken = JWTSupplier();
         // RoleArn to be set already.
-        WithRoleAction("AssumeRoleWithWebIdentity");
-        WithDurationInSeconds(GetDurationInSeconds(CurrentJsonWebToken.Expiry));
+        _ = WithRoleAction("AssumeRoleWithWebIdentity");
+        _ = WithDurationInSeconds(GetDurationInSeconds(CurrentJsonWebToken.Expiry));
         RoleSessionName ??= Utils.To8601String(DateTime.Now);
         return base.BuildRequest();
     }
@@ -73,7 +67,8 @@ public class WebIdentityProvider : WebIdentityClientGrantsProvider<WebIdentityPr
     {
         Validate();
         var credentials = base.ParseResponse(response);
-        using var stream = Encoding.UTF8.GetBytes(Convert.ToString(response.Content)).AsMemory().AsStream();
+        using var stream = Encoding.UTF8.GetBytes(Convert.ToString(response.Content, CultureInfo.InvariantCulture))
+            .AsMemory().AsStream();
         return Utils.DeserializeXml<AccessCredentials>(stream);
     }
 }

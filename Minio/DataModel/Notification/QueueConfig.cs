@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Notification;
 
 /// <summary>
 ///     QueueConfig carries one single queue notification configuration
@@ -51,6 +51,6 @@ public class QueueConfig : NotificationConfiguration
 
     public override int GetHashCode()
     {
-        return Queue.GetHashCode();
+        return StringComparer.Ordinal.GetHashCode(Queue);
     }
 }

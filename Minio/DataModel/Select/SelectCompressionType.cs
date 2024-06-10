@@ -16,7 +16,7 @@
 
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Select;
 
 [Serializable]
 public sealed class SelectCompressionType
@@ -26,8 +26,6 @@ public sealed class SelectCompressionType
     public static readonly SelectCompressionType GZIP = new("GZIP");
     public static readonly SelectCompressionType BZIP = new("BZIP2");
 
-    [XmlText] public string CompressionType;
-
     public SelectCompressionType()
     {
     }
@@ -36,4 +34,6 @@ public sealed class SelectCompressionType
     {
         CompressionType = value;
     }
+
+    [XmlText] public string CompressionType { get; set; }
 }

@@ -1,26 +1,30 @@
 ﻿/*
-* MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2017, 2020 MinIO, Inc.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * MinIO .NET Library for Amazon S3 Compatible Cloud Storage, (C) 2017, 2020 MinIO, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Net;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Minio.DataModel;
+using Minio.DataModel.Encryption;
+using Minio.DataModel.Notification;
 using Minio.DataModel.ObjectLock;
 using Minio.Examples.Cases;
+using Minio.Helper;
 
 namespace Minio.Examples;
 
@@ -46,11 +50,12 @@ public static class Program
     {
         var characters = "0123456789abcdefghijklmnopqrstuvwxyz";
         var result = new StringBuilder(5);
-        for (var i = 0; i < 5; i++) result.Append(characters[rnd.Next(characters.Length)]);
+        for (var i = 0; i < 5; i++) _ = result.Append(characters[rnd.Next(characters.Length)]);
         return "minio-dotnet-example-" + result;
     }
 
-    public static async Task Main(string[] args)
+    [SuppressMessage("Design", "MA0051:Method is too long", Justification = "Needs to run all tests")]
+    public static async Task Main()
     {
         string endPoint = null;
         string accessKey = null;
@@ -64,8 +69,9 @@ public static class Program
             var posColon = endPoint.LastIndexOf(':');
             if (posColon != -1)
             {
-                port = int.Parse(endPoint.Substring(posColon + 1, endPoint.Length - posColon - 1));
-                endPoint = endPoint.Substring(0, posColon);
+                port = int.Parse(endPoint.Substring(posColon + 1, endPoint.Length - posColon - 1), NumberStyles.Integer,
+                    CultureInfo.InvariantCulture);
+                endPoint = endPoint[..posColon];
             }
 
             accessKey = Environment.GetEnvironmentVariable("ACCESS_KEY");
@@ -105,8 +111,17 @@ public static class Program
         var destBucketName = GetRandomName();
         var destObjectName = GetRandomName();
         var lockBucketName = GetRandomName();
+        var progress = new SyncProgress<ProgressReport>(progressReport =>
+        {
+            Console.WriteLine(
+                $"Percentage: {progressReport.Percentage}% TotalBytesTransferred: {progressReport.TotalBytesTransferred} bytes");
+            if (progressReport.Percentage != 100)
+                Console.SetCursorPosition(0, Console.CursorTop - 1);
+            else Console.WriteLine();
+        });
         var objectsList = new List<string>();
         for (var i = 0; i < 10; i++) objectsList.Add(objectName + i);
+
         // Set app Info 
         minioClient.SetAppInfo("app-name", "app-version");
 
@@ -138,13 +153,13 @@ public static class Program
         ListenBucketNotifications.Run(minioClient, bucketName, new List<EventType> { EventType.ObjectCreatedAll });
 
         // Put an object to the new bucket
-        await PutObject.Run(minioClient, bucketName, objectName, smallFileName).ConfigureAwait(false);
+        await PutObject.Run(minioClient, bucketName, objectName, smallFileName, progress).ConfigureAwait(false);
 
         // Get object metadata
         await StatObject.Run(minioClient, bucketName, objectName).ConfigureAwait(false);
 
         // List the objects in the new bucket
-        ListObjects.Run(minioClient, bucketName);
+        await ListObjects.Run(minioClient, bucketName).ConfigureAwait(false);
 
         // Get the file and Download the object as file
         await GetObject.Run(minioClient, bucketName, objectName, smallFileName).ConfigureAwait(false);
@@ -167,7 +182,7 @@ public static class Program
         await FGetObject.Run(minioClient, bucketName, objectName, smallFileName).ConfigureAwait(false);
 
         // Automatic Multipart Upload with object more than 5Mb
-        await PutObject.Run(minioClient, bucketName, objectName, bigFileName).ConfigureAwait(false);
+        await PutObject.Run(minioClient, bucketName, objectName, bigFileName, progress).ConfigureAwait(false);
 
         // Specify SSE-C encryption options
         using var aesEncryption = Aes.Create();
@@ -182,11 +197,12 @@ public static class Program
         var sses3 = new SSES3();
 
         // Uncomment to specify SSE-KMS encryption option
-        var sseKms = new SSEKMS("kms-key", new Dictionary<string, string> { { "kms-context", "somevalue" } });
+        var sseKms = new SSEKMS("kms-key",
+            new Dictionary<string, string>(StringComparer.Ordinal) { { "kms-context", "somevalue" } });
 
         // Upload encrypted object
         var putFileName1 = CreateFile(1 * UNIT_MB);
-        await PutObject.Run(minioClient, bucketName, objectName, putFileName1, ssec).ConfigureAwait(false);
+        await PutObject.Run(minioClient, bucketName, objectName, putFileName1, progress, ssec).ConfigureAwait(false);
         // Copy SSE-C encrypted object to unencrypted object
         await CopyObject.Run(minioClient, bucketName, objectName, destBucketName, objectName, sseCpy, ssec)
             .ConfigureAwait(false);
@@ -194,7 +210,7 @@ public static class Program
         await FGetObject.Run(minioClient, destBucketName, objectName, bigFileName, ssec).ConfigureAwait(false);
 
         // List the incomplete uploads
-        ListIncompleteUploads.Run(minioClient, bucketName);
+        await ListIncompleteUploads.Run(minioClient, bucketName).ConfigureAwait(false);
 
         // Remove all the incomplete uploads
         await RemoveIncompleteUpload.Run(minioClient, bucketName, objectName).ConfigureAwait(false);
@@ -216,7 +232,7 @@ public static class Program
         // Object Lock Configuration operations
         lockBucketName = GetRandomName();
         await MakeBucketWithLock.Run(minioClient, lockBucketName).ConfigureAwait(false);
-        var configuration = new ObjectLockConfiguration(RetentionMode.GOVERNANCE, 35);
+        var configuration = new ObjectLockConfiguration(ObjectRetentionMode.GOVERNANCE, 35);
         await SetObjectLockConfiguration.Run(minioClient, lockBucketName, configuration).ConfigureAwait(false);
         await GetObjectLockConfiguration.Run(minioClient, lockBucketName).ConfigureAwait(false);
         await RemoveObjectLockConfiguration.Run(minioClient, lockBucketName).ConfigureAwait(false);
@@ -266,6 +282,6 @@ public static class Program
         File.Delete(smallFileName);
         File.Delete(bigFileName);
 
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) Console.ReadLine();
+        if (OperatingSystem.IsWindows()) _ = Console.ReadLine();
     }
 }

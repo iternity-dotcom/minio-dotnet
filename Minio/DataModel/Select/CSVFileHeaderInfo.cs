@@ -16,7 +16,7 @@
 
 using System.Xml.Serialization;
 
-namespace Minio.DataModel;
+namespace Minio.DataModel.Select;
 
 [Serializable]
 public sealed class CSVFileHeaderInfo
@@ -26,8 +26,6 @@ public sealed class CSVFileHeaderInfo
     public static readonly CSVFileHeaderInfo Ignore = new("IGNORE");
     public static readonly CSVFileHeaderInfo Use = new("USE");
 
-    [XmlText] public string HeaderInfo;
-
     public CSVFileHeaderInfo()
     {
     }
@@ -36,4 +34,6 @@ public sealed class CSVFileHeaderInfo
     {
         HeaderInfo = value;
     }
+
+    [XmlText] public string HeaderInfo { get; set; }
 }

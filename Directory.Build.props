@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
     <PropertyGroup>
         <Copyright>Copyright (c) Minio. All rights reserved</Copyright>
         <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
@@ -16,7 +16,7 @@
         <RepositoryUrl>https://github.com/minio/minio-dotnet</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <Product>$(AssemblyName) ($(TargetFramework))</Product>
-        <Version>5.0.0</Version>
+        <Version>6.0.3</Version>
 
         <!--<Nullable>enable</Nullable>-->
         <ImplicitUsings>enable</ImplicitUsings>
@@ -24,23 +24,23 @@
         <NoWarn>$(NoWarn);CS1591</NoWarn>
         <Platform>AnyCPU</Platform>
 
-        <EnableNETAnalyzers>false</EnableNETAnalyzers>
+        <EnableNETAnalyzers>true</EnableNETAnalyzers>
         <AnalysisLevel>latest</AnalysisLevel>
-        <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+        <AnalysisMode>Default</AnalysisMode>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <AccelerateBuildsInVisualStudio>true</AccelerateBuildsInVisualStudio>
 
         <IsTestProject>$(MSBuildProjectName.Contains('Test'))</IsTestProject>
     </PropertyGroup>
 
     <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
-        <!--<SymbolPackageFormat>snupkg</SymbolPackageFormat>-->
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
         <IncludeSymbols>true</IncludeSymbols>
         <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.pdb</AllowedOutputExtensionsInPackageBuildOutputFolder>
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
         <DesignTimeBuild>false</DesignTimeBuild>
-        <DebugType>portable</DebugType>
-        <DebugSymbols>true</DebugSymbols>
-
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <GeneratePackageOnBuild Condition=" '$(IsTestProject)' != 'true'">true</GeneratePackageOnBuild>
         <PackageIcon>icon.png</PackageIcon>
@@ -51,40 +51,53 @@
     </PropertyGroup>
 
     <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
-        <DebugType>full</DebugType>
-        <DebugSymbols>true</DebugSymbols>
     </PropertyGroup>
 
-    <ItemGroup>
+    <ItemGroup Condition=" '$(IsTestProject)' != 'true'">
         <None Include="$(MSBuildThisFileDirectory)\LICENSE" Pack="true" PackagePath="\" />
         <None Include="$(MSBuildThisFileDirectory)\icon.png" Pack="true" PackagePath="\" />
         <None Include="$(MSBuildThisFileDirectory)\readme.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All" />
-        <!--
-        <PackageReference Include="Roslynator.Analyzers" Version="4.3.0">
+        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+        <PackageReference Include="Meziantou.Polyfill" Version="1.0.38">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="AsyncFixer" Version="1.6.0">
+        <PackageReference Include="Roslynator.Analyzers" Version="4.12.4">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="IDisposableAnalyzers" Version="4.0.6">
+        <PackageReference Include="Roslynator.Formatting.Analyzers" Version="4.12.4">
             <PrivateAssets>all</PrivateAssets>
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
         </PackageReference>
         <PackageReference Include="ReflectionAnalyzers" Version="0.3.1">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Meziantou.Analyzer" Version="2.0.37">
+        <PackageReference Include="Nullable.Extended.Analyzer" Version="1.15.6169">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
         </PackageReference>
+        <PackageReference Include="Meziantou.Analyzer" Version="2.0.155">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="AsyncFixer" Version="1.6.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <!--
+        <PackageReference Include="IDisposableAnalyzers" Version="4.0.6">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
         -->
     </ItemGroup>
-
 </Project>

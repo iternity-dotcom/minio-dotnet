@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+using Minio.DataModel.Args;
+
 namespace Minio.Examples.Cases;
 
 public static class PresignedGetObject
@@ -24,7 +26,10 @@ public static class PresignedGetObject
     {
         if (client is null) throw new ArgumentNullException(nameof(client));
 
-        var reqParams = new Dictionary<string, string> { { "response-content-type", "application/json" } };
+        var reqParams = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            { "response-content-type", "application/json" }
+        };
         var args = new PresignedGetObjectArgs()
             .WithBucket(bucketName)
             .WithObject(objectName)
